@@ -209,6 +209,15 @@ def test_seed_has_the_planned_sites_and_roles():
             assert q.get('fact') in (None, 'years', 'certs', 'units') or isinstance(q['fact'], dict), q
 
 
+def test_every_seeded_job_has_a_description_kept_out_of_the_call():
+    # The console shows it; Riley reads only the short facts, so the voice prompt doesn't grow with it
+    for j in seed.jobs()[1]:
+        d = j['description']
+        assert d['about'] and d['duties'] and d['requirements'] and d['preferred'], j['title']
+        assert all(isinstance(x, str) for k in ('duties', 'requirements', 'preferred') for x in d[k]), j['title']
+        assert 'description' not in j['facts'] and d['about'] not in str(j['facts']), j['title']
+
+
 def test_the_med_surg_job_is_screen_yamls():
     cfg = config()
     medsurg = next(j for j in JOBS if j['title'] == cfg['agent']['job'])

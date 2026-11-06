@@ -78,6 +78,111 @@ def made_up_name(rng: random.Random | None = None) -> str:
     return (rng or random).choice(NAMES)
 
 
+# ---- the demo persona's resume: close to the job, not the same words (an ATS would miss it) ----
+
+# The job's unit in plain words, as Riley says it
+UNIT_WORDS = {'med-surg': 'med-surg', 'telemetry': 'telemetry', 'step-down': 'step-down', 'icu': 'ICU',
+              'ed': 'emergency department', 'l&d': 'labor and delivery', 'peds': 'pediatrics', 'rehab': 'rehab',
+              'long-term care': 'long-term care', 'nicu': 'NICU', 'psych': 'behavioral health',
+              'dialysis': 'dialysis', 'or': 'operating room'}
+# For each kind of unit a job needs, a neighbouring one for the resume: (how Riley says it, the resume's line, the
+# match.UNITS key it reads as, or None). A keyword filter looking for the job's unit finds none of these.
+NEAR = {
+    'med-surg': ('the ICU', 'Medical ICU', 'icu'),
+    'telemetry': ('step-down', 'Step-Down Unit', 'step-down'),
+    'step-down': ('telemetry', 'Cardiac Telemetry', 'telemetry'),
+    'icu': ('progressive care', 'Progressive Care Unit', 'step-down'),
+    'ed': ('urgent care', 'Urgent Care Center', None),
+    'l&d': ('postpartum', 'Mother-Baby Unit', None),
+    'peds': ('the NICU', 'Neonatal ICU', 'nicu'),
+    'nicu': ('pediatrics', 'Pediatric Unit', 'peds'),
+    'psych': ('the emergency department', 'Emergency Department', 'ed'),
+    'dialysis': ('the ICU', 'Surgical ICU', 'icu'),
+    'or': ('PACU', 'Post-Anesthesia Care Unit', None),
+    'rehab': ('an orthopedic floor', 'Orthopedic Unit', None),
+    'long-term care': ('sub-acute rehab', 'Sub-Acute Rehab', 'rehab'),
+}
+# The shared screen.yaml questions a persona's resume answers outright, read back on the call for a yes
+PLAIN = ('license', 'years_rn', 'certifications')
+EMPLOYER = 'Northgate Community Hospital'  # made up, like every name in the demo
+
+
+def _needs(job: dict, q: dict) -> str | None:
+    """The kind of unit this job is about, as a match.UNITS key: from its title and unit, then its criteria, then
+    the question itself. None when the job names no unit (a front desk, a lab draw team)."""
+    for text in (job.get('title') or '', job.get('unit') or ''):
+        if units := match.found(match.UNITS, text):
+            return units[0]
+    for c in job.get('criteria') or []:
+        target = store._j_load(c.get('target')) or {}
+        if isinstance(target.get('unit'), str) and target['unit'] in NEAR:
+            return target['unit']
+    fact = q.get('fact')
+    if isinstance(fact, dict) and fact.get('unit') in NEAR:
+        return fact['unit']
+    units = match.found(match.UNITS, q.get('ask', ''))
+    return units[0] if units else None
+
+
+def gap(job: dict, questions: list[dict]) -> dict | None:
+    """The one question the resume answers in other words: the job's own unit question first (an ICU job's "Have you
+    worked in an ICU?"), else acute_care. {question, needs (the UNITS key), needs_words, near (UNITS key or None),
+    says (how Riley says the resume's unit), line (the resume's unit name)}, or None when the job has no unit."""
+    shared = {'acute_care'}
+    unit_qs = [q for q in questions if q.get('fact') == 'units' or
+               (isinstance(q.get('fact'), dict) and 'unit' in q['fact'])]
+    q = next((q for q in unit_qs if q['id'] not in shared), None) or next(
+        (q for q in unit_qs if q['id'] in shared), None)
+    needs = _needs(job, q) if q else None
+    if q is None or not needs or needs not in NEAR:
+        return None
+    says, line, near = NEAR[needs]
+    return {'question': q['id'], 'needs': needs, 'needs_words': UNIT_WORDS[needs], 'near': near, 'says': says,
+            'line': line}
+
+
+def persona(job: dict, name: str, cfg: dict, rng: random.Random | None = None) -> dict:
+    """The made-up resume a guest plays: an RN license, a few years, BLS and ACLS, all read back for a yes, and the
+    job's unit question answered with a neighbouring unit (`gap`), so Riley asks one question about the actual work
+    instead of filtering on the word. Returns {text, facts, answers (stored shape, not confirmed), gap, summary}."""
+    pick = rng or random.Random()
+    questions = store._j_load(job.get('questions')) or cfg.get('questions', [])
+    ids = {q['id']: q for q in questions}
+    years = pick.randint(2, 6)
+    g = gap(job, questions)
+    title = job.get('title') or cfg['agent'].get('job', 'RN')
+    role = title.split(',')[0] if ',' in title else title
+    unit = g['line'] if g else 'Medical-Surgical Unit'
+    start = 2026 - years
+    rn = 'license' in ids  # an RN job; other roles' resumes leave the RN license out
+    text = '\n'.join([name, *(['Registered Nurse, New York State license'] if rn else []),
+                      f'{role}, {unit}, {EMPLOYER}, {start} to present', 'BLS and ACLS, both current'])
+    facts = {**({'licenses': ['NY RN']} if rn else {}), 'years': float(years), 'certs': ['ACLS', 'BLS']}
+    if g and g['near']:
+        facts['units'] = [g['near']]
+    said = {'license': ('New York RN license', 'yes'),
+            'years_rn': (f'{years} years as an RN', _years_meets(ids.get('years_rn'), years)),
+            'certifications': ('BLS and ACLS, both current', 'yes')}
+    answers = {i: {'value': v, 'meets': m, 'source': 'resume', 'confirmed': False}
+               for i, (v, m) in said.items() if i in ids}
+    if g:
+        answers[g['question']] = {'value': f"{years} years in {g['says']} ({unit})", 'meets': 'unclear',
+                                  'source': 'resume', 'confirmed': False, 'needs': g['needs_words']}
+    summary = f"{years} years as an RN in {g['says']}" if g else f'{years} years as an RN'
+    return {'text': text, 'facts': facts, 'answers': answers, 'gap': g, 'summary': summary}
+
+
+def _years_meets(q: dict | None, years: int) -> str:
+    m = re.fullmatch(r'at least (\d+)', str((q or {}).get('good', '')))
+    return 'yes' if not m or years >= int(m.group(1)) else 'no'
+
+
+def resume_answers(demo: dict) -> dict:
+    """What the guest's resume says, in the screener's shape, waiting to be confirmed on the call."""
+    return store.call_answers([{'id': demo['application_id'], 'answers': demo.get('answers')}],
+                              demo['application_id'])[0]
+
+
 def intro(who: dict, lang: str = 'en') -> str:
     """Said once on a guest call, after the language: who they play."""
     if lang == 'es':
@@ -112,13 +217,16 @@ async def today(now: datetime) -> int:
     return int(rows[0]['n']) if rows else 0
 
 
-async def create(first_name: str, phone: str, email: str | None, cfg: dict, now: datetime | None = None) -> dict:
+async def create(first_name: str, phone: str, email: str | None, cfg: dict, now: datetime | None = None,
+                 job: dict | None = None) -> dict:
     """The guest's candidate (made-up name, their phone so their own call finds it) and application, plus the
-    token their status page uses. Returns {token, candidate_id, application_id, name, title, hospital, phone}."""
+    token their status page uses, and a made-up resume close to the job but not in its words (`persona`). `job` is
+    the open job they picked on /try; without one, a random open job.
+    Returns {token, candidate_id, application_id, job_id, name, title, hospital, phone, resume}."""
     now = now or datetime.now(UTC)
     key = us_mobile(phone)
     assert key, 'checked by refuse() first'
-    job = await _job(cfg)
+    job = job or await _job(cfg)
     token = secrets.token_urlsafe(16)
     name = made_up_name()
     guest = {'first_name': first_name.strip()[:40], 'phone': key, 'email': (email or '').strip()[:120] or None,
@@ -126,18 +234,23 @@ async def create(first_name: str, phone: str, email: str | None, cfg: dict, now:
     who = (await octo.query(
         'insert into candidates (sandbox, name, phone, guest, expires, created) values ($1, $2, $3, $4, $5, $6) '
         'returning id', [SANDBOX, name, key, store._j(guest), now + timedelta(days=KEEP_DAYS), now]))[0]
-    app = await store.apply(SANDBOX, who['id'], job['id'], source='guest', now=now)
+    resume = persona(job, name, cfg)
+    app = await store.apply(SANDBOX, who['id'], job['id'], resume=resume['text'], facts=resume['facts'],
+                            source='guest', now=now)
+    # The resume's answers wait on the application for Riley to confirm, and the one in other words to ask about
+    await octo.query('update applications set answers = $2 where id = $1', [app['id'], store._j(resume['answers'])])
     await store.log(SANDBOX, 'guest', who['id'], app['id'], {'job_id': job['id']})
-    return {'token': token, 'candidate_id': who['id'], 'application_id': app['id'], 'name': name,
-            'title': job['title'], 'hospital': job.get('hospital') or cfg['agent']['employer'], 'phone': key}
+    return {'token': token, 'candidate_id': who['id'], 'application_id': app['id'], 'job_id': job['id'], 'name': name,
+            'title': job['title'], 'hospital': job.get('hospital') or cfg['agent']['employer'], 'phone': key,
+            'resume': resume['summary']}
 
 
 async def find(phone: str) -> dict | None:
     """A guest record waiting for this number's call: the made-up name, the role and the application not yet
     screened. None for anyone else, so other callers get the usual name and role check."""
     rows = await octo.query(
-        'select c.id as candidate_id, c.name, c.guest, a.id as application_id, j.title, j.questions, j.facts, '
-        'j.unit, j.shift, h.name as hospital from candidates c join applications a on a.candidate_id = c.id '
+        'select c.id as candidate_id, c.name, c.guest, a.id as application_id, a.answers, j.title, j.questions, '
+        'j.facts, j.unit, j.shift, h.name as hospital from candidates c join applications a on a.candidate_id = c.id '
         'join jobs j on j.id = a.job_id left join hospitals h on h.id = j.hospital_id '
         "where c.sandbox = $1 and c.phone = $2 and c.guest is not null and a.status = 'applied' "
         'and a.withdrawn is null order by a.applied desc limit 1', [SANDBOX, store.phone_key(phone)])
@@ -146,8 +259,8 @@ async def find(phone: str) -> dict | None:
 
 async def by_application(application_id: int) -> dict | None:
     rows = await octo.query(
-        'select c.id as candidate_id, c.name, c.guest, a.id as application_id, j.title, j.questions, j.facts, '
-        'j.unit, j.shift, h.name as hospital from applications a join candidates c on c.id = a.candidate_id '
+        'select c.id as candidate_id, c.name, c.guest, a.id as application_id, a.answers, j.title, j.questions, '
+        'j.facts, j.unit, j.shift, h.name as hospital from applications a join candidates c on c.id = a.candidate_id '
         'join jobs j on j.id = a.job_id left join hospitals h on h.id = j.hospital_id '
         'where a.id = $1', [application_id])
     return rows[0] if rows else None

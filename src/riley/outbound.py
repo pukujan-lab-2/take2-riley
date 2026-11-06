@@ -4,11 +4,11 @@ Only when SIP_OUTBOUND_TRUNK_ID is set (the owner's Telnyx trunk `riley-telnyx`,
 in riley/keys.py). Without it nothing is dialled and `place` says why, so the web page offers Riley's number instead.
 
 The room and the dispatch carry only ids and the mode ({'mode': 'guest' | 'outcome' | 'status' | 'callback' |
-'follow_up', 'candidate_id', 'application_id', 'message_id'?, 'event_ids'?}); riley/main.py reads them. The scheduler
-(riley/scheduler.py) places 'callback' (finish the screen they asked to be called back for) and 'follow_up' (reminders,
-a missed interview, a moved date: the events named in `event_ids`). The phone number goes only to the SIP request, never
-into a room name or metadata, so it never reaches the calls table or the results page. A 555-01xx number (made up,
-like the guest cast's) is never dialled.
+'follow_up', 'candidate_id', 'application_id', 'job_id'?, 'message_id'?, 'event_ids'?}); riley/main.py reads them.
+The scheduler (riley/scheduler.py) places 'callback' (finish the screen they asked to be called back for) and
+'follow_up' (reminders, a missed interview, a moved date: the events named in `event_ids`). The phone number goes only
+to the SIP request, never into a room name or metadata, so it never reaches the calls table or the results page. A
+555-01xx number (made up, like the guest cast's) is never dialled.
 """
 import json
 import os
@@ -26,7 +26,8 @@ def room_metadata(meta: dict) -> str:
     """The room's metadata: the mode and record ids, nothing else (no phone, no name)."""
     if meta.get('mode') not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
-    keep = {k: meta[k] for k in ('mode', 'candidate_id', 'application_id', 'message_id') if meta.get(k) is not None}
+    keep = {k: meta[k] for k in ('mode', 'candidate_id', 'application_id', 'job_id', 'message_id')
+            if meta.get(k) is not None}
     if meta.get('event_ids'):
         keep['event_ids'] = [int(i) for i in meta['event_ids']]
     return json.dumps(keep)

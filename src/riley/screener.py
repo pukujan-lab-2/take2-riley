@@ -333,6 +333,18 @@ asking."""
                  + '. When you reach one of these, do not ask the question as written: say what they told us in a few '
                  'words and ask only whether they also have what this role needs ("you mentioned telemetry; have you '
                  'worked ICU or other critical care?"). Then call record_answer for it.')
+    # A resume item in other words than the job's (ICU on the resume, med-surg in the job): a keyword filter would
+    # drop them, so Riley asks one question about the actual work instead of reading it back (riley/guest.py gap)
+    gaps = {i: v for i, v in prefilled.items() if v.get('needs') and i in asks}
+    prefilled = {i: v for i, v in prefilled.items() if i not in gaps}
+    for i, v in gaps.items():
+        note += (f'\n\nTheir resume, in other words than this role\'s: [{i}] says "{v["answer"]}", and this role needs '
+                 f'{v["needs"]} experience. When you reach [{i}], do not ask it as written and do not read it back '
+                 'with the others: ask one short question that names both and asks about the actual work ("Your '
+                 f'resume shows {v["answer"].split(" (")[0]}. This role is {v["needs"]}. Have you cared for '
+                 f'{v["needs"]} patients, or worked on that kind of unit?"). Then call record_answer for [{i}] with '
+                 'what they say, in their words, and meets as for any answer to it. Ask it '
+                 f'once, never confirm_resume for [{i}], then go on with the screen.')
     if prefilled:
         note += ('\n\nFrom their resume (not yet confirmed): '
                  + '; '.join(f'[{i}] {v["answer"]}' for i, v in prefilled.items() if i in asks)
@@ -741,6 +753,9 @@ class Screener(Agent):
         bad = [i for i in question_ids if i not in screen.prefilled]
         if bad:
             raise ToolError(f'not from the resume: {", ".join(bad)}; ask those as questions instead')
+        if gaps := [i for i in question_ids if screen.prefilled[i].get('needs')]:
+            raise ToolError(f'the resume does not say what this role needs for {", ".join(gaps)}: ask the one '
+                            'question about it and record_answer; confirm_resume only the others')
         for i in question_ids:
             screen.answers[i] = confirm(screen.prefilled[i], time.time() - screen.started)
         left = [i for i in self.ids if i not in screen.answers]

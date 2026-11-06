@@ -11,8 +11,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
-# Each test file's results from this run, saved to eval_runs at the end so /results shows tests over time
+# Each test file's results from this run, saved to eval_runs at the end so /results shows tests over time. With them,
+# for the console's Checks page: each test's seconds, a failure's message, and each judge verdict (evals.judge.LOG)
 RESULTS: dict[str, dict[str, bool]] = {}
+EXTRA: dict[str, dict[str, dict]] = {}
 STARTED = time.time()
 
 
@@ -36,6 +38,18 @@ def pytest_runtest_logreport(report):
     file, _, name = report.nodeid.partition('::')
     tests = RESULTS.setdefault(Path(file).stem, {})
     tests[name] = tests.get(name, True) and report.passed
+    extra = EXTRA.setdefault(Path(file).stem, {'durations': {}, 'failures': {}})
+    extra['durations'][name] = round(extra['durations'].get(name, 0) + report.duration, 2)
+    if report.failed:
+        extra['failures'][name] = report.longreprtext[-1500:]
+
+
+def run_detail(file: str, judged: dict[str, list[dict]]) -> dict:
+    """What a file's run keeps beside its results: seconds and failures per test, and its judge verdicts."""
+    extra = EXTRA.get(file, {})
+    details = {node.partition('::')[2]: v for node, v in judged.items() if Path(node.partition('::')[0]).stem == file}
+    return {k: v for k, v in (('durations', extra.get('durations')), ('failures', extra.get('failures')),
+                              ('details', details)) if v}
 
 
 def pytest_sessionfinish(session):
@@ -47,11 +61,14 @@ def pytest_sessionfinish(session):
     if not octo.ready():
         return
 
+    judge = sys.modules.get('evals.judge')
+    judged = judge.LOG if judge else {}
+
     async def save():
         seconds = round(time.time() - STARTED, 1)
         for file, tests in RESULTS.items():
             await octo.save_eval(f'test-{file}-{secrets.token_hex(3)}', f'test:{file}', all(tests.values()),
-                                 {'checks': tests, 'seconds': seconds})
+                                 {'checks': tests, 'seconds': seconds, **run_detail(file, judged)})
     # A results page that is down never fails the tests
     with contextlib.suppress(Exception):
         asyncio.run(save())

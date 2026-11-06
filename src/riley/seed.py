@@ -2,7 +2,8 @@
 shifts").
 
 Safe to run again: a hospital is found by name and a job by title and hospital, then brought up to date; a criterion
-is found by its job and name, so its id (which a decision may name) stays the same. The job screen.yaml describes is
+is found by its job and name, so its id (which a decision may name) stays the same, and one the seed no longer lists
+is removed. The job screen.yaml describes is
 the seeded Midtown med-surg job: the row it made before the seed is taken over, never doubled.
 
 A visitor's sandbox (never `live`) also gets a small cast of made-up candidates with screened applications
@@ -78,6 +79,8 @@ async def seed(sandbox: str) -> None:
                                     [sandbox, cfg['agent']['title']])
         cols = {'title': j['title'], 'hospital_id': hid, 'location': j['hospital'], 'unit': j['unit'],
                 'shift': j['shift'], 'hours': j['hours'], 'pay': j['pay'], 'facts': store._j(j['facts']),
+                # the posting text for people to read (about, duties, requirements, preferred); never in the call
+                'description': store._j(j.get('description')),
                 'questions': store._j(j['questions']), 'slots': store._j(j['slots']),
                 'options': store._j(j['options']), 'window_hours': 0, 'status': 'open'}
         if rows:
@@ -96,6 +99,9 @@ async def seed(sandbox: str) -> None:
             if not rows:
                 await octo.query('insert into criteria (job_id, name, kind, points, target, reason, change) '
                                  'values ($1, $2, $3, $4, $5, $6, $7)', [job_id, c['name'], *vals])
+        names = store._j([c['name'] for c in j['criteria']])
+        await octo.query('delete from criteria where job_id = $1 and not (name = any(select '
+                         'jsonb_array_elements_text($2::jsonb)))', [job_id, names])
     cast = await seed_cast(sandbox, js)
     print(f'seeded {sandbox}: {len(hospitals)} hospitals, {len(js)} jobs, {cast} made-up candidates', flush=True)
 
