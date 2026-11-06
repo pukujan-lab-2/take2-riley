@@ -448,7 +448,8 @@ def call_answers(apps: list[dict], current_id: int) -> tuple[dict, dict]:
 def stored_answers(screen_answers: dict) -> dict:
     """The call's answers in the stored shape."""
     return {i: {'value': v['answer'], 'meets': v['meets'], 'source': v.get('source', 'call'),
-                'confirmed': v.get('confirmed', True)} for i, v in screen_answers.items()}
+                'confirmed': v.get('confirmed', True), **({'earlier': v['earlier']} if v.get('earlier') else {})}
+            for i, v in screen_answers.items()}
 
 
 def _j_load(v):

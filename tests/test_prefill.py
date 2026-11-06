@@ -82,3 +82,11 @@ def test_a_declined_answer_goes_to_the_recruiter_and_never_carries_over():
     assert card['next_step'] == 'recruiter review: chose not to answer pay_expectation'
     assert 'license' in carry_over(config(), {'license': {'answer': 'NY RN', 'meets': 'yes'}})
     assert not carry_over(config(), {'license': {'answer': 'chose not to say', 'meets': 'declined'}})
+
+
+def test_a_corrected_answer_keeps_the_earlier_one_for_the_recruiter():
+    answers = {'years_rn': {'answer': '4 years', 'meets': 'yes', 'source': 'call',
+                            'earlier': [{'answer': '3 years', 'meets': 'yes', 'source': 'call', 'at': 40.0}]},
+               'license': {'answer': 'NY RN', 'meets': 'yes'}}
+    stored = store.stored_answers(answers)
+    assert stored['years_rn']['earlier'][0]['answer'] == '3 years' and 'earlier' not in stored['license']

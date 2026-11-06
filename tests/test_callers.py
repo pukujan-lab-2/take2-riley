@@ -119,6 +119,22 @@ async def test_a_refusal_is_recorded_as_declined_and_not_asked_again():
                            'for the role, and asks a different, next screening question, not the years question again.')
 
 
+async def test_a_declined_question_answered_later_is_recorded():
+    session, screen, _ = await call([*FULL[:3], "I don't want to tell you that.",
+                                     'Actually, never mind, I have six years as an RN.'])
+    async with session:
+        a = screen.answers.get('years_rn', {})
+        assert a.get('meets') == 'yes' and a.get('earlier', [{}])[0].get('meets') == 'declined', screen.answers
+
+
+async def test_a_correction_with_a_fact_replaces_the_earlier_answer():
+    session, screen, _ = await call([*FULL[:4], "Sorry, I said that wrong, it's actually six years, not five."])
+    async with session:
+        a = screen.answers.get('years_rn', {})
+        assert '6' in a.get('answer', '') or 'six' in a.get('answer', '').lower(), screen.answers
+        assert a.get('earlier'), screen.answers
+
+
 async def test_knockout_is_flagged_never_rejected():
     session, screen, r = await call(['Yes.', 'No, my license is from New Jersey, I applied for New York last month.'])
     async with session:
