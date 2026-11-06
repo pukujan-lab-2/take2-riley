@@ -1,6 +1,6 @@
 """Matching, the seeded jobs and what a screen says about a person, without a model or a database
 (docs/BUILD-PLAN.md, "Matching" and "Properties and proof"). The properties run over generated people and the
-eleven seeded jobs."""
+twenty-six seeded jobs."""
 import random
 
 from hypothesis import given, settings
@@ -149,8 +149,8 @@ def test_labor_and_delivery_is_one_unit_and_negation_is_per_clause():
 
 def test_seed_has_the_planned_sites_and_roles():
     hospitals, jobs = seed.jobs()
-    assert len(hospitals) == 5 and len(jobs) == 11
-    assert len({(j['title'], j['hospital']) for j in jobs}) == 11
+    assert len(hospitals) == 5 and len(jobs) == 26
+    assert len({(j['title'], j['hospital']) for j in jobs}) == 26
     for j in jobs:
         ids = [q['id'] for q in j['questions']]
         assert len(ids) == len(set(ids)) and ids[-1] == 'other_roles', j['title']
@@ -172,7 +172,8 @@ def test_seed_has_the_planned_sites_and_roles():
 def test_the_med_surg_job_is_screen_yamls():
     cfg = config()
     medsurg = next(j for j in JOBS if j['title'] == cfg['agent']['job'])
-    assert medsurg['questions'] == cfg['questions'] and medsurg['facts'] == cfg['job_facts']
+    facts = {k: v for k, v in medsurg['facts'].items() if k != 'openings'}
+    assert medsurg['questions'] == cfg['questions'] and facts == cfg['job_facts']
 
 
 def test_a_chosen_job_brings_its_own_questions_and_facts():

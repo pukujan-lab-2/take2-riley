@@ -42,6 +42,8 @@ def jobs(cfg: dict | None = None) -> tuple[list[dict], list[dict]]:
         if 'other_roles' not in {q['id'] for q in qs}:
             qs.append(shared['other_roles'])
         # YAML reads the times as datetimes; jobs.slots keeps them as ISO text
+        if 'openings' in j:  # how many people the job hires, shown with its facts
+            j = {**j, 'facts': {**j['facts'], 'openings': f"{j['openings']} open positions"}}
         slots = [t.isoformat() if hasattr(t, 'isoformat') else t for t in j.get('slots', data['slots'])]
         out.append({'options': [], **j, 'slots': slots, 'questions': qs})
     return data['hospitals'], out
