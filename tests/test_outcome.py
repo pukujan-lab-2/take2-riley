@@ -18,7 +18,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from livekit.agents.llm import ToolError
 
-from riley import bias, guest, identity, outcome, outcomeline
+from riley import bias, guest, identity, outcome, outcomeline, store
 from riley.main import config
 
 NOW = datetime(2026, 11, 6, 15, tzinfo=UTC)
@@ -157,8 +157,9 @@ def test_a_caller_who_is_not_them_hears_nothing(kind):
 def test_outcome_call_cannot_change_answers_or_score():
     agent, _ = line()
     names = {t.info.name for t in agent.tools}
-    assert names >= {'confirm_identity', 'book_slot', 'add_role', 'give_feedback', 'request_recruiter'}
-    assert not names & {'record_answer', 'confirm_resume', 'fix_fact', 'withdraw'}
+    # fix_fact only sends the correction to Dana and reopens the review; nothing on the call rewrites an answer
+    assert names >= {'confirm_identity', 'book_slot', 'add_role', 'give_feedback', 'request_recruiter', 'fix_fact'}
+    assert not names & {'record_answer', 'confirm_resume', 'withdraw'}
     assert set(outcome.STATUS_AFTER.values()) <= {'interview', 'not_yet', 'not_selected'}
 
 
@@ -249,3 +250,43 @@ def test_dana_email_has_one_quiet_link_to_their_own_self_id_form(kind, candidate
     assert e['text'].rstrip().endswith('Dana\nRecruiter, Hudson Park Health')
     assert 'optional' in e['text'].lower()
     assert not any(w in e['text'] for q in bias.QUESTIONS.values() for w in q['options'] if w != bias.DECLINE)
+
+
+ANSWERS = {'license': {'value': 'No active NY RN license', 'meets': 'no'},
+           'years_rn': {'value': 'One year as an RN', 'meets': 'yes'},
+           'certifications': {'value': 'BLS current, no ACLS', 'meets': 'no'},
+           'per_diem': {'value': 'Per diem schedule does not work', 'meets': 'no'}}
+SHORT = [{'id': 125, 'name': 'New York RN license', 'target': {'license': 'NY RN'},
+          'reason': 'This role needs an active New York State RN license.', 'change': ''},
+         {'id': 127, 'name': 'current ACLS', 'target': {'cert': 'ACLS'},
+          'reason': 'This role needs a current ACLS certification.', 'change': ''},
+         {'id': 128, 'name': '2 years as an RN', 'target': {'years': 2},
+          'reason': 'Floating needs at least two years of acute care.', 'change': ''},
+         {'id': 129, 'name': 'per diem', 'target': {'shift': 'per diem'}, 'reason': 'This role is per diem only.',
+          'change': ''}]
+
+
+def test_each_reason_carries_what_they_said_on_the_call():
+    """Sam's not-selected from the Nov 6 test call: every reason is tied to their own answer, word for word."""
+    said = [outcome.said_for(c, ANSWERS, {})['heard'] for c in SHORT]
+    assert said == ['No active NY RN license', 'BLS current, no ACLS', 'One year as an RN',
+                    'Per diem schedule does not work']
+
+
+def test_a_resume_that_met_it_and_a_call_that_did_not_is_named_as_a_difference():
+    resume = {'certs': ['BLS', 'ACLS'], 'licenses': ['NY RN'], 'years': 3, 'shifts': []}
+    got = {c['id']: outcome.said_for(c, ANSWERS, resume)['resume_differs'] for c in SHORT}
+    # ACLS and the license: the resume had them, the call said no. Years: the call said yes, so no difference to ask
+    assert got == {125: True, 127: True, 128: False, 129: False}
+
+
+def test_the_message_and_the_help_line_give_the_reasons_and_a_way_to_correct_them():
+    resume = {'certs': ['BLS', 'ACLS'], 'licenses': [], 'years': 1, 'shifts': []}
+    p = outcome.parts_for('not_selected', '', SHORT, [], {'title': 'RN, Per diem float'}, 'Sam Rivera', config(),
+                          answers=ANSWERS, resume=resume)
+    text = outcome.template(p)
+    assert 'On the call you said: No active NY RN license.' in text
+    assert 'Your resume showed current ACLS, but on the call you said: BLS current, no ACLS.' in text
+    assert 'If any of that is wrong' in text and not outcome.check(text, p)
+    why = store.why(p)
+    assert 'on the call they said One year as an RN' in why and 'resume showed current ACLS' in why

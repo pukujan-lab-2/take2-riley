@@ -225,7 +225,7 @@ async def for_tracker(sandbox: str, job_id: int, now: datetime | None = None) ->
         '(application_id is null and candidate_id in (select candidate_id from applications where sandbox = $1 '
         'and job_id = $2))) order by at', [sandbox, job_id])
     try:  # the matcher (track 5) decides requirements once it is on main
-        match = importlib.import_module('agent.match')
+        match = importlib.import_module('.match', __package__)
         job = (await octo.query('select * from jobs where id = $1', [job_id]))[0]
     except (ImportError, IndexError):
         match = job = None

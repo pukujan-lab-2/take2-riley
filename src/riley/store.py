@@ -369,16 +369,64 @@ async def undo_withdraw(application_id: int, now: datetime | None = None) -> boo
     return True
 
 
+async def restart_screen(application_id: int) -> None:
+    """Back to the start: the answers, score and decision are cleared and the application is applied again, so the
+    next call screens it afresh. The old answers and decision stay in `events`."""
+    await octo.query("update applications set answers = '{}'::jsonb, score = null, decision = null, "
+                     "status = 'applied', updated = now() where id = $1", [application_id])
+
+
+async def restart_after_outcome(sandbox: str, phone: str) -> int | None:
+    """The demo's fourth call: once a caller has heard their outcome (a delivered message, none still waiting), their
+    own next call starts the interview again. Returns the application restarted, or None."""
+    rows = await octo.query(
+        'select a.id, a.candidate_id from applications a join candidates c on c.id = a.candidate_id '
+        "where c.sandbox = $1 and c.phone = $2 and c.merged_into is null and a.withdrawn is null "
+        "and a.status in ('interview', 'not_yet', 'not_selected') "
+        "and exists (select 1 from messages m where m.application_id = a.id and m.status = 'delivered') "
+        "and not exists (select 1 from messages m where m.application_id = a.id and m.status = 'approved') "
+        'order by a.applied desc limit 1', [sandbox, phone_key(phone)])
+    if not rows:
+        return None
+    await restart_screen(int(rows[0]['id']))
+    await log(sandbox, 'retake', rows[0]['candidate_id'], rows[0]['id'], {'by': 'their call after the outcome'})
+    return int(rows[0]['id'])
+
+
+async def reopen(application_id: int) -> None:
+    """A fact behind a no was corrected: the application goes back to Dana to read (screened), with the decision
+    cleared. The old decision stays in `events`."""
+    await octo.query("update applications set status = 'screened', decision = null, updated = now() "
+                     "where id = $1 and status in ('not_yet', 'not_selected')", [application_id])
+
+
 async def status(sandbox: str, phone: str) -> list[dict]:
     """What the help line reads out: every application this caller has, with its date, status and promise.
     Only their own; nothing about other candidates beyond each job's count (rule 13)."""
-    return await octo.query(
+    rows = await octo.query(
         'select a.id, a.candidate_id, c.name, c.timezone, j.title, j.location, a.applied, a.updated, a.promised_by, '
         'a.status, a.withdrawn, '
         '(select count(*) from applications o where o.job_id = a.job_id) as applicants '
         'from applications a join jobs j on j.id = a.job_id join candidates c on c.id = a.candidate_id '
         'where c.sandbox = $1 and c.phone = $2 and c.merged_into is null order by a.applied',
         [sandbox, phone_key(phone)])
+    # A no carries its why: the last message about it, each item with what they said on the call
+    for r in rows:
+        if r['status'] in ('not_yet', 'not_selected'):
+            m = await octo.query("select parts from messages where application_id = $1 and status in "
+                                 "('approved', 'delivered') order by id desc limit 1", [r['id']])
+            r['why'] = why(_j_load(m[0]['parts']) if m else {})
+    return rows
+
+
+def why(parts: dict) -> str:
+    """A no's reasons in one line: each item's reason, with what they said on the call and where the resume differed."""
+    bits = []
+    for i in (parts or {}).get('items') or []:
+        said = (f"resume showed {i['name']}, but on the call they said {i['heard']}" if i.get('resume_differs')
+                else f"on the call they said {i['heard']}" if i.get('heard') else '')
+        bits.append(' '.join(x for x in (i.get('reason'), f'({said})' if said else '') if x))
+    return '; '.join(b for b in [(parts or {}).get('reason', ''), *bits] if b)
 
 
 def call_answers(apps: list[dict], current_id: int) -> tuple[dict, dict]:

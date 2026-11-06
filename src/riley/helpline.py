@@ -46,7 +46,8 @@ def lines(rows: list[dict], recruiter: str, tz: str = 'America/New_York') -> str
         hear = 'no date: withdrawn' if r['status'] == 'withdrawn' else when(store.ts(r.get('promised_by')), tz)
         out.append(f"- [{r['id']}] {r['title']}, {r['location']}: applied {day(store.ts(r['applied']), tz)}; "
                    f"{stands}; next step: {nxt}; they hear by {hear}; "
-                   f"applicants for this job so far: {r['applicants']}")
+                   f"applicants for this job so far: {r['applicants']}"
+                   + (f"; why: {r['why']}" if r.get('why') else ''))
     return '\n'.join(out)
 
 
@@ -89,8 +90,11 @@ For several applications, name each role briefly. Then ask what they need.
 - Say dates and times exactly as written above; never move, round or guess one.
 - The applicant count only if they ask, and only as written above. Never say anything about any other candidate.
 - You never say whether they will get the job, never give a score, and never promise an interview.
-- If they want to fix a fact (for example a certification or their years), call fix_fact; tell them {a['recruiter']} \
-will see it and it reopens the review of that application.
+- Not yet or not selected: give the why written for it in the same turn as the status, in one or two sentences, \
+with what they said on the call ("On the call you said one year as an RN; this role needs two."). Where it says \
+their resume showed otherwise, say that plainly, never as a mistake or a lie. Then ask once if any of it is wrong.
+- If they want to fix a fact (for example a certification or their years), or say a detail in the why is wrong, \
+call fix_fact; tell them {a['recruiter']} will see it and it reopens the review of that application.
 - If they forgot a referral, call add_referral with the person's name and unit; {a['recruiter']} confirms it with the \
 employee.
 - If they want another role considered, call add_role; a short call covers only what differs for that role.
@@ -228,6 +232,8 @@ async def save(sandbox: str, candidate_id: int | None, help: Help) -> None:
         'recruiter_requested': help.recruiter_requested, 'ended_by': help.ended_by or 'call ended'})
     for r in help.requests:
         await store.log(sandbox, r['kind'], candidate_id, r['application_id'], r['detail'])
+        if r['kind'] == 'fix' and r['application_id']:
+            await store.reopen(r['application_id'])
     for a in help.withdraw:
         await store.withdraw(a, now)
     for a in help.undo:

@@ -165,6 +165,10 @@ async def entrypoint(ctx: JobContext):
                 if not meta or caller.attributes.get('sip.callStatus', 'active') == 'active':
                     break
                 await asyncio.sleep(0.5)
+            # The demo's order on one number: screen, help line until the outcome rings, the outcome call, then
+            # their next own call starts the interview again
+            if number and not meta and outcome.auto_decides(await outcome.get_mode('live')):
+                await store.restart_after_outcome('live', number)
             demo = demo or (await guest.find(number) if number and (not meta or callback) else None)
             if demo:  # screened for the job they were given, with its facts and questions
                 cfg = job_config(cfg, demo)
