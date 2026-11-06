@@ -53,3 +53,19 @@ def test_saving_a_help_call_never_writes_answers_or_score(monkeypatch):
     asyncio.run(helpline.save('live', 3, h))
     assert sum('insert into events' in q for q in sql) == 3
     assert not any('answers' in q or 'score =' in q for q in sql), sql
+
+
+def test_asking_for_another_role_on_the_help_line_is_their_yes_and_never_a_closed_door(monkeypatch):
+    text = helpline.instructions(config(), ROWS)
+    assert "Never say they can't be considered for another position" in text
+    assert 'renewal date or the new card' in text
+    sql = []
+
+    async def query(q, params=None):
+        sql.append((q, params))
+        return [{'facts': {}}]
+    monkeypatch.setattr(octo, 'query', query)
+    h = helpline.Help(config(), ROWS)
+    h.requests = [{'kind': 'add_role', 'application_id': None, 'detail': {'role': 'PCT for med-surg ICU'}}]
+    asyncio.run(helpline.save('live', 3, h))
+    assert any('consent = consent ||' in q and '"other_roles": true' in p[2] for q, p in sql)

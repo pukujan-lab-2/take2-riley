@@ -36,9 +36,11 @@ UNITS = {
 }
 SHIFTS = {'days': r'days?|daytime', 'evenings': r'evenings?', 'nights': r'nights?|overnight',
           'weekends': r'weekends?', 'per diem': r'per diem|prn'}
-# A clause that says they don't have it, or it has run out: its certs don't count
-NOT = re.compile(r"\b(no|not|never|don'?t|doesn'?t|haven'?t|lapsed|expired|expiring|out of date|need to renew)\b",
-                 re.I)
+# A clause that says they don't have it, or it has run out: its certs don't count. One that is still current but
+# being renewed ("expiring in May", "renewal submitted") still counts; RENEW marks it for Dana to check the date
+NOT = re.compile(r"\b(no|not|never|don'?t|doesn'?t|haven'?t|lapsed|expired|out of date)\b", re.I)
+LAPSED = re.compile(r'\b(lapsed|expired|out of date)\b', re.I)
+RENEW = re.compile(r'\b(renew\w*|recertif\w*|expiring)\b', re.I)
 # Spoken amounts in "about four years" or "a year and a half"
 NUMBERS = {w: i for i, w in enumerate(['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
                                        'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
@@ -58,13 +60,31 @@ def years_in(answer: str) -> float | None:
 
 
 def found(words: dict, text: str) -> list[str]:
-    """Which of `words` the answer says they have. A clause with "no", "lapsed" and the like counts for nothing."""
-    out = set()
+    """Which of `words` the answer says they have. A clause with "no", "lapsed" and the like counts for nothing, and
+    "it lapsed" with no name of its own takes back the clause before it ("I have BLS, it expired")."""
+    out, last = set(), set()
     for clause in re.split(r'[,;.]|\bbut\b|\band\b(?! (?:delivery|d)\b)', text.lower()):
+        named = {k for k, pat in words.items() if re.search(rf'\b(?:{pat})\b', clause)}
         if NOT.search(clause):
+            if not named and LAPSED.search(clause):
+                out -= last
+            last = set()
             continue
-        out |= {k for k, pat in words.items() if re.search(rf'\b(?:{pat})\b', clause)}
+        out |= named
+        last = named or last
     return sorted(out)
+
+
+def renewing(words: dict, text: str) -> list[str]:
+    """Which of `words` the answer says they hold with a renewal under way ("BLS is current, renewal is in"). An
+    expired or lapsed one is not here, since `found` does not count it at all."""
+    out, last = set(), set()
+    for part in re.split(r'[;.]|\bbut\b|\band\b(?! (?:delivery|d)\b)', text.lower()):
+        named = set(found(words, part))
+        if RENEW.search(part) and not LAPSED.search(part):
+            out |= named or last  # "Yes, BLS. It's in renewal": the "it" is the one just named
+        last = named or last
+    return sorted(out & set(found(words, text)))
 
 
 def shifts_of(text: str) -> set[str]:
@@ -75,7 +95,8 @@ def shifts_of(text: str) -> set[str]:
 def facts_from(questions: list[dict], answers: dict) -> dict:
     """What a screen's confirmed answers say about the person, for `candidates.facts`. Only keys answered on this
     screen are in it, so a merge keeps what an earlier screen found and replaces what this one asked again.
-    `other_roles` (their consent) comes back in it too; the store files it under `consent`."""
+    `other_roles` (their consent) comes back in it too; the store files it under `consent`. `renewing` lists the
+    licenses and certs they hold that are being renewed: they count as held, and Dana asks for the renewal date."""
     facts: dict = {}
     for q in questions:
         a, fact = answers.get(q['id']), q.get('fact')
@@ -88,6 +109,8 @@ def facts_from(questions: list[dict], answers: dict) -> dict:
                 facts['years'] = max(facts.get('years', 0), n)
         elif fact in ('certs', 'units'):
             facts[fact] = sorted({*facts.get(fact, []), *found(CERTS if fact == 'certs' else UNITS, text)})
+            if fact == 'certs':
+                facts['renewing'] = sorted({*facts.get('renewing', []), *renewing(CERTS, text)})
         elif isinstance(fact, dict):
             (kind, value), = fact.items()
             if kind == 'consent':
@@ -96,6 +119,9 @@ def facts_from(questions: list[dict], answers: dict) -> dict:
             key = {'license': 'licenses', 'cert': 'certs', 'shift': 'shifts'}[kind]
             names = sorted(shifts_of(value)) if kind == 'shift' else [value]
             facts[key] = sorted({*facts.get(key, []), *(names if yes else [])})
+            if kind in ('license', 'cert'):
+                held = yes and RENEW.search(text) and not NOT.search(text)
+                facts['renewing'] = sorted({*facts.get('renewing', []), *(names if held else [])})
     return facts
 
 
@@ -126,8 +152,10 @@ def fit(facts: dict, job: dict, criteria: list[dict]) -> dict:
     """How one person fits one job. Required items are each met, missing or unknown; weighted and bonus items earn
     their points, weighted ones in part (1.5 years against 2 earns 75% of it). The job's shift is always a required
     item, so a shift they did not say they can work is never offered. Offered only when every required item is met.
+    `renewing`: the met required items whose license or cert is being renewed, for Dana to check the date.
     The lists are sorted, so the order of the criteria never changes the answer."""
-    met, missing, unknown = set(), set(), set()
+    met, missing, unknown, renew = set(), set(), set(), set()
+    being_renewed = set(facts.get('renewing') or [])
     items = [c for c in criteria if c.get('target')]
     if job.get('shift') and not any('shift' in c['target'] for c in items if c['kind'] == 'required'):
         items.append({'kind': 'required', 'name': job['shift'], 'target': {'shift': job['shift']}})
@@ -136,11 +164,15 @@ def fit(facts: dict, job: dict, criteria: list[dict]) -> dict:
         state, share = _item(facts, c['target'])
         if c['kind'] == 'required':
             {'met': met, 'missing': missing, 'unknown': unknown}[state].add(c['name'])
+            (kind, want), = c['target'].items()
+            if state == 'met' and kind in ('license', 'cert') and being_renewed & ({want} if isinstance(want, str)
+                                                                                   else set(want)):
+                renew.add(c['name'])
             continue
         top += c.get('points', 0)
         got += c.get('points', 0) * (share if c['kind'] == 'weighted' else float(state == 'met'))
     return {'offer': not missing and not unknown, 'met': sorted(met), 'missing': sorted(missing),
-            'unknown': sorted(unknown), 'credit': round(got / top, 3) if top else 0.0}
+            'unknown': sorted(unknown), 'renewing': sorted(renew), 'credit': round(got / top, 3) if top else 0.0}
 
 
 def suggest(facts: dict, jobs: list[dict], where: str = '', limit: int = 3) -> list[dict]:
@@ -185,12 +217,13 @@ async def open_jobs(sandbox: str) -> list[dict]:
     return jobs
 
 
-async def offers(sandbox: str, candidate_id: int, exclude_job_id: int | None = None) -> list[dict]:
+async def offers(sandbox: str, candidate_id: int, exclude_job_id: int | None = None, asked: bool = False) -> list[dict]:
     """The other roles this person can be offered: open jobs where every required item is met by what they have
-    confirmed, and only if they agreed to be considered for other roles. Best fit first."""
+    confirmed, and only if they agreed to be considered for other roles, or `asked` for them just now on a call.
+    Best fit first."""
     rows = await octo.query('select facts, consent from candidates where id = $1 and sandbox = $2',
                             [candidate_id, sandbox])
-    if not rows or not (store._j_load(rows[0]['consent']) or {}).get('other_roles'):
+    if not rows or not (asked or (store._j_load(rows[0]['consent']) or {}).get('other_roles')):
         return []
     facts = store._j_load(rows[0]['facts']) or {}
     skip = int(exclude_job_id) if exclude_job_id is not None else None

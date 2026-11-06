@@ -54,6 +54,11 @@ MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'augus
           'november', 'december']
 NUMBER = re.compile(r'\b\d+(?:[.:]\d+)?\b')
 HOSPITAL = re.compile(r'\bHudson Park(?: [A-Z][a-z]+)?')
+# A message never closes the door on other roles: with none listed, Dana can still consider them as roles open
+CLOSED = re.compile(r"\b(?:no|not any|aren'?t any|don'?t (?:currently |yet )?have(?: any)?) (?:other |more )?"
+                    r"(?:open(?:ings|\s+roles)?|roles|positions|jobs)\b|\b(?:can'?t|cannot|can not|won'?t|unable to|"
+                    r"not able to)(?: be)? consider(?:ed)?\b", re.I)
+OPEN_DOOR = "If you'd like to be considered for other roles as they open, say so on this number."
 
 
 def config() -> dict:
@@ -221,6 +226,8 @@ def check(text: str, parts: dict) -> list[str]:
     nums = set(NUMBER.findall(blob))
     problems += [n for n in NUMBER.findall(low) if n not in nums]
     problems += [h for h in (m.group(0).lower() for m in HOSPITAL.finditer(text)) if h not in blob]
+    if CLOSED.search(text):
+        problems.append('says no other roles')
     return sorted(set(problems))
 
 
@@ -269,6 +276,8 @@ def template(parts: dict, first_person: bool = False) -> str:
         if p['offers']:
             roles = '; '.join(offer_text(o) for o in p['offers'])
             out.append(f'Another role fits what you told us: {roles}. Say yes and you are considered for it too.')
+        else:
+            out.append(OPEN_DOOR)
         if p['options']:
             out.append(me('I can also offer', f'{who} can also offer') + f": {'; '.join(p['options'])}.")
         out.append('You can give feedback, or ask for a person to look at this again, any time on this number.')
@@ -283,7 +292,9 @@ reason with what they said on the call ("heard", in their words); where "resume_
 their resume showed it but the call did not, never as a mistake or a lie. When any item has "heard", end the reason \
 with one sentence that if any of it is wrong they can say so on this number and the review reopens. Use only the \
 facts in the parts: add no role, unit, certification, hospital, day, date, time or number that is not in them, and \
-keep the recruiter's reason and change in her own words. No greeting line, no sign-off, no lists. Under 110 words.
+keep the recruiter's reason and change in her own words. When "offers" is empty, never say there are no other \
+openings or that they can't be considered: say they can ask on this number to be considered for other roles as they \
+open. No greeting line, no sign-off, no lists. Under 110 words.
 
 Parts (JSON):
 """
@@ -394,7 +405,8 @@ def short_items(criteria: list[dict], facts: dict, job: dict, scorecard: dict | 
             names |= {str(x.get('id')), str(x.get('name'))} if isinstance(x, dict) else {str(x)}
         return [c for c in required if str(c.get('id')) in names or str(c.get('name')) in names]
     flags = ' '.join((scorecard or {}).get('flags', [])).lower()
-    words = {'license': ('license', ' rn'), 'certifications': ('bls', 'cert'), 'nights': ('night', 'shift'),
+    # ' rn' once matched "1 year as an RN" too, so a missing license also read as missing years
+    words = {'license': ('license',), 'certifications': ('bls', 'cert'), 'nights': ('night', 'shift'),
              'work_authorization': ('authoriz',)}
     flagged = [q for q in words if flags.startswith(q) or f' {q}:' in f' {flags}']
     out = [c for c in required
@@ -609,6 +621,12 @@ async def auto(sandbox: str, application_id: int) -> dict | None:
              **({'ring_after': (datetime.now(UTC) + timedelta(minutes=wait)).isoformat()} if wait else {})}
     await octo.query('update messages set parts = $2 where id = $1', [m['id'], json.dumps(parts, default=str)])
     return await approve(m['id'], AUTO_BY)
+
+
+async def other_roles(sandbox: str, candidate_id: int, exclude_job_id: int | None) -> list[dict]:
+    """On a call, when they ask about other roles: the open jobs whose every required item they meet, as offers."""
+    match = track('match')
+    return await match.offers(sandbox, candidate_id, exclude_job_id, asked=True) if match else []
 
 
 async def pending(sandbox: str, candidate_id: int) -> dict | None:
