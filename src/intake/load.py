@@ -38,7 +38,7 @@ async def jobs(sandbox: str) -> list[dict]:
         "(select coalesce(json_agg(c order by c.id), '[]') from criteria c where c.job_id = j.id) as criteria "
         'from jobs j left join hospitals h on h.id = j.hospital_id where j.sandbox = $1 '
         "order by j.status = 'draft' desc, j.created desc", [sandbox])
-    return [{**r, 'criteria': _j_load(r['criteria']) or []} for r in rows]
+    return [{**r, 'criteria': _j_load(r['criteria']) or [], 'description': _j_load(r.get('description'))} for r in rows]
 
 
 async def target_job(sandbox: str, job_id: int | None) -> dict:

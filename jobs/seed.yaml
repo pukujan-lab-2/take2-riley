@@ -57,6 +57,29 @@ jobs:
     shift: nights
     hours: 3 x 12 h
     pay: $48 to $62 an hour, plus a $6 night differential
+    description:
+      about: >-
+        You care for four to six adults on a 32-bed medical-surgical floor overnight, most of them recovering from
+        surgery or admitted for infections, diabetes, falls or heart and lung problems. Nights mean pain control,
+        wound and drain checks, blood draws and lab follow-up, and getting patients ready for morning procedures and
+        discharges.
+      duties:
+        - Assess patients at the start of shift and through the night, and act on changes
+        - Give scheduled and as-needed medicines, IV fluids and blood products
+        - Care for surgical wounds, drains, catheters and IV lines
+        - Call the covering provider about abnormal labs, vital signs or new symptoms
+        - Teach patients and families before discharge and chart in the electronic record
+        - Work with the patient care technician and hand off clearly at shift change
+      requirements:
+        - Active New York State RN license
+        - Current BLS from the American Heart Association
+        - At least one year of hospital RN experience
+        - Able to work 12-hour nights, including rotating weekends and holidays
+        - Able to stand and walk most of the shift and help move patients
+      preferred:
+        - BSN
+        - ACLS
+        - Telemetry or step-down experience
     options: [{ kind: per_diem, note: "per diem nights on 5 West" }, { kind: site, note: "Hudson Park Bronx telemetry nights" }]
     criteria:
       - *rn
@@ -74,6 +97,26 @@ jobs:
     shift: days
     hours: 3 x 12 h
     pay: $55 to $72 an hour
+    description:
+      about: >-
+        You care for one or two critically ill adults in a 16-bed medical ICU on day shift, often patients on
+        ventilators, drips to support blood pressure, or dialysis at the bedside. The day is close monitoring,
+        titrating medicines, joining rounds with the ICU team, and keeping families informed.
+      duties:
+        - Monitor and manage patients on ventilators, arterial lines and central lines
+        - Titrate vasoactive and sedation drips to orders and protocols
+        - Respond to rapid responses and codes on the unit
+        - Take part in daily rounds and carry out the care plan
+        - Support families through hard news and goals-of-care talks
+      requirements:
+        - Active New York State RN license
+        - Current BLS and ACLS
+        - At least two years of acute care RN experience
+        - Able to work 12-hour day shifts, including rotating weekends and holidays
+      preferred:
+        - One or more years of ICU experience
+        - CCRN certification
+        - BSN
     facts:
       pay: $55 to $72 an hour depending on experience
       schedule: three 12-hour day shifts a week, 7 am to 7 pm, every third weekend
@@ -110,6 +153,27 @@ jobs:
     shift: evenings
     hours: 3 x 12 h
     pay: $52 to $68 an hour, plus a $4 evening differential
+    description:
+      about: >-
+        You work evening shifts in a busy emergency department, taking adults and children from triage through
+        treatment, admission or discharge. Evenings bring the heaviest volume, so the work is quick assessment,
+        early treatment, and moving patients safely while new ones keep arriving.
+      duties:
+        - Triage walk-in and ambulance patients and set priority
+        - Start IVs, draw labs, give medicines and monitor response
+        - Care for trauma, stroke, chest pain and sepsis patients under set protocols
+        - Assist with procedures and codes
+        - Prepare patients for admission, transfer or discharge with clear teaching
+      requirements:
+        - Active New York State RN license
+        - Current BLS, ACLS and PALS
+        - At least one year of RN experience
+        - Able to work 12-hour evening shifts, including weekends and holidays
+        - Able to stand, move and lift patients for long stretches
+      preferred:
+        - Emergency department experience
+        - TNCC
+        - ENPC or a trauma course
     facts:
       pay: $52 to $68 an hour depending on experience, plus a $4 an hour evening differential
       schedule: three 12-hour evening shifts a week, 11 am to 11 pm, every third weekend
@@ -145,6 +209,27 @@ jobs:
     shift: nights
     hours: 3 x 12 h
     pay: $50 to $64 an hour, plus a $6 night differential
+    description:
+      about: >-
+        You care for adults on a 28-bed step-down telemetry unit overnight, mostly heart patients and those with
+        heart rhythm problems who need continuous monitoring. Nights are watching rhythms, acting fast on changes,
+        and managing cardiac medicines and drips.
+      duties:
+        - Read and respond to heart rhythms on the central monitor
+        - Give cardiac medicines and manage heparin and other drips to protocol
+        - Care for patients after heart catheterization and device procedures
+        - Recognize early decline and call a rapid response when needed
+        - Teach patients about heart medicines, diet and follow-up
+      requirements:
+        - Active New York State RN license
+        - Current BLS and ACLS
+        - At least one year of RN experience
+        - Pass a basic rhythm interpretation test
+        - Able to work 12-hour nights, including rotating weekends and holidays
+      preferred:
+        - Telemetry or step-down experience
+        - Med-surg experience
+        - NIHSS stroke scale certification
     facts:
       pay: $50 to $64 an hour depending on experience, plus a $6 an hour night differential
       schedule: three 12-hour night shifts a week, 7 pm to 7 am, every third weekend
@@ -179,6 +264,25 @@ jobs:
     shift: days
     hours: 5 x 8 h
     pay: $32 to $40 an hour
+    description:
+      about: >-
+        You care for adults recovering from surgery, strokes or long hospital stays on a 40-bed sub-acute rehab
+        unit, working weekday day shifts under the direction of RNs. Most of the day is giving medicines, doing
+        treatments, and helping patients get stronger so they can go home.
+      duties:
+        - Pass medicines by mouth, injection and feeding tube on schedule
+        - Do wound care, finger-stick glucose checks and other treatments
+        - Check vital signs and report changes to the RN or provider
+        - Work with physical and occupational therapy on each patient's goals
+        - Chart care and supervise nursing assistants on the unit
+      requirements:
+        - Active New York State LPN license
+        - Current BLS (in-person class)
+        - Able to work 8-hour day shifts, five days a week
+        - Able to lift, transfer and reposition patients with help
+      preferred:
+        - IV therapy training or certification
+        - One year in rehab, long-term care or sub-acute care
     facts:
       pay: $32 to $40 an hour depending on experience
       schedule: five 8-hour day shifts a week, 7 am to 3:30 pm, every other weekend
@@ -192,7 +296,7 @@ jobs:
       - use: work_authorization
       - { id: years_lpn, ask: "How many years have you worked as an LPN?", kind: number, good: "at least 1", points: 25 }
       - use: certifications
-      - { id: iv, ask: "Are you IV certified?", kind: yes_no, good: "IV certification is a plus", points: 15, fact: { cert: IV } }
+      - { id: iv, ask: "Have you had IV therapy training?", kind: yes_no, good: "IV training is a plus", points: 15, fact: { cert: IV } }
       - { id: days, ask: "The role is five 8-hour day shifts a week, 7 am to 3:30 pm. Does that work for you?", kind: yes_no, knockout: true, points: 20, fact: { shift: days } }
       - use: start_date
       - use: pay_expectation
@@ -200,7 +304,7 @@ jobs:
       - { kind: required, name: "New York LPN license", target: { license: NY LPN }, reason: "This role needs an active New York State LPN license.", change: "Once your New York LPN license is active, call this number." }
       - *bls
       - { kind: required, name: "days", target: { shift: days }, reason: "This role is days only.", change: "If days become possible, call this number." }
-      - { kind: bonus, name: "IV certification", points: 15, target: { cert: IV } }
+      - { kind: bonus, name: "IV therapy training", points: 15, target: { cert: IV } }
 
   - title: Patient Care Technician
     openings: 5
@@ -209,6 +313,28 @@ jobs:
     shift: nights
     hours: 3 x 12 h
     pay: $22 to $27 an hour, plus a $2 night differential
+    description:
+      about: >-
+        You help nurses care for patients on a 32-bed med-surg floor overnight. You take vital signs, help patients
+        wash, eat, walk and use the bathroom, and do blood draws and EKGs, telling the nurse about anything that
+        looks off.
+      duties:
+        - Take and record vital signs, weights, intake and output
+        - Help patients with bathing, toileting, feeding and moving
+        - Draw blood and do 12-lead EKGs as ordered
+        - Turn and reposition patients and help prevent falls
+        - Report changes in condition to the RN right away
+      requirements:
+        - PCT or CNA certificate
+        - Trained to do 12-lead EKGs and blood draws
+        - Current BLS
+        - High school diploma or GED
+        - Able to work 12-hour nights
+        - Able to lift and move patients and stand most of the shift
+      preferred:
+        - EKG certification
+        - Phlebotomy certification
+        - Hospital experience
     facts:
       pay: $22 to $27 an hour depending on experience, plus a $2 an hour night differential
       schedule: three 12-hour night shifts a week, 7 pm to 7 am, every third weekend
@@ -221,7 +347,7 @@ jobs:
       - use: work_authorization
       - { id: pct_cert, about: person, ask: "Do you have a Patient Care Technician or CNA certificate?", kind: text, good: "either one", knockout_if: "neither", points: 0, fact: certs }
       - use: certifications
-      - { id: skills, ask: "Have you done EKGs or phlebotomy on the job?", kind: text, good: "either is a plus", points: 25, fact: certs }
+      - { id: skills, ask: "Are you trained to do 12-lead EKGs and blood draws?", kind: text, good: "both", points: 25, fact: certs }
       - { id: nights, ask: "The role is three 12-hour night shifts a week, 7 pm to 7 am. Does that work for you?", kind: yes_no, knockout: true, points: 25, fact: { shift: nights } }
       - use: start_date
       - use: pay_expectation
@@ -229,8 +355,8 @@ jobs:
       - *bls
       - { kind: required, name: "PCT or CNA certificate", target: { cert: [PCT, CNA] }, reason: "This role needs a Patient Care Technician or CNA certificate.", change: "With either certificate, call this number and we'll pick it up." }
       - { kind: required, name: "nights", target: { shift: nights }, reason: "This role is nights only.", change: "If nights become possible, call this number." }
-      - { kind: bonus, name: "EKG", points: 10, target: { cert: EKG } }
-      - { kind: bonus, name: "phlebotomy", points: 10, target: { cert: phlebotomy } }
+      - { kind: required, name: "EKG", target: { cert: EKG }, reason: "This role does 12-lead EKGs, so it needs EKG training.", change: "Once you have EKG training, call this number and we'll pick it up." }
+      - { kind: required, name: "phlebotomy", target: { cert: phlebotomy }, reason: "This role does blood draws, so it needs phlebotomy training.", change: "Once you have phlebotomy training, call this number and we'll pick it up." }
 
   - title: RN, Labor and Delivery
     openings: 2
@@ -239,6 +365,26 @@ jobs:
     shift: nights
     hours: 3 x 12 h
     pay: $52 to $66 an hour, plus a $6 night differential
+    description:
+      about: >-
+        You care for women in labor, during birth and in the first hours after, on a 12-room labor and delivery unit
+        overnight. The work includes fetal monitoring, managing labor medicines, helping in the delivery room and
+        the operating room for C-sections, and first care of the newborn.
+      duties:
+        - Monitor mother and baby during labor and read fetal heart tracings
+        - Give and adjust labor medicines such as oxytocin and magnesium
+        - Assist with vaginal births and circulate or scrub for C-sections
+        - Give first newborn care and start skin-to-skin and feeding
+        - Respond to emergencies such as hemorrhage or a sudden drop in the baby's heart rate
+      requirements:
+        - Active New York State RN license
+        - Current BLS and NRP
+        - Labor and delivery experience, usually one to two years
+        - Able to work 12-hour nights, including weekends and holidays
+      preferred:
+        - Intermediate fetal monitoring course
+        - C-EFM certification
+        - ACLS
     facts:
       pay: $52 to $66 an hour depending on experience, plus a $6 an hour night differential
       schedule: three 12-hour night shifts a week, 7 pm to 7 am, every third weekend
@@ -273,6 +419,25 @@ jobs:
     shift: days
     hours: 3 x 12 h
     pay: $50 to $63 an hour
+    description:
+      about: >-
+        You care for infants, children and teens on a 20-bed pediatrics floor on day shift, with conditions such as
+        asthma, infections, dehydration and recovery from surgery. Much of the work is with parents as well as the
+        child: explaining, calming, and teaching them how to care for their child at home.
+      duties:
+        - Assess children and adjust care for age and size
+        - Calculate and give weight-based medicines and IV fluids
+        - Manage breathing treatments, IV lines and feeding plans
+        - Teach and support parents through the stay and at discharge
+        - Spot early signs of decline and act quickly
+      requirements:
+        - Active New York State RN license
+        - Current BLS and PALS
+        - Able to work 12-hour day shifts, including rotating weekends and holidays
+      preferred:
+        - Pediatric nursing experience
+        - BSN
+        - CPN certification
     facts:
       pay: $50 to $63 an hour depending on experience
       schedule: three 12-hour day shifts a week, 7 am to 7 pm, every third weekend
@@ -307,6 +472,24 @@ jobs:
     shift: weekends
     hours: 2 x 12 h
     pay: $21 to $26 an hour, plus a $2 weekend differential
+    description:
+      about: >-
+        You help long-term residents with daily living on a 60-bed unit, working weekend 12-hour shifts. For many
+        residents this is home, so the work is personal care, safety, and getting to know each person's routine.
+      duties:
+        - Help residents bathe, dress, eat, toilet and move
+        - Take vital signs and weights and report changes to the nurse
+        - Reposition residents and help prevent falls and pressure sores
+        - Keep rooms clean and safe and answer call lights
+        - Record care in the resident's chart
+      requirements:
+        - New York State nurse aide certification, listed on the Nurse Aide Registry
+        - Current BLS
+        - Able to work 12-hour Saturday and Sunday shifts
+        - Able to lift, transfer and reposition residents with help or a lift
+      preferred:
+        - Experience in a nursing home or long-term care
+        - Dementia care training
     facts:
       pay: $21 to $26 an hour depending on experience, plus a $2 an hour weekend differential
       schedule: two 12-hour shifts, Saturday and Sunday, 7 am to 7 pm
@@ -335,6 +518,26 @@ jobs:
     shift: days or evenings
     hours: 4 x 10 h
     pay: $47 to $58 an hour
+    description:
+      about: >-
+        You answer calls and messages from patients from home, decide how urgent each problem is, and guide them to
+        self-care, a same-day visit, urgent care or the emergency room. You follow written triage protocols and
+        document every call.
+      duties:
+        - Take incoming calls and messages and assess symptoms over the phone or video
+        - Use written triage protocols to decide the right level of care
+        - Book same-day visits or send patients to urgent care or the ER when needed
+        - Give home-care advice and safety instructions
+        - Document each contact and follow up on high-risk calls
+      requirements:
+        - Active New York State RN license
+        - At least three years of RN experience, ideally in ER, urgent care, med-surg or primary care
+        - A quiet, private home workspace and reliable internet
+        - Able to work 10-hour day or evening shifts
+        - Comfortable with an electronic health record and several screens at once
+      preferred:
+        - Telephone triage experience
+        - Experience with standard adult and pediatric triage protocols
     facts:
       pay: $47 to $58 an hour depending on experience
       schedule: four 10-hour shifts a week, days (8 am to 6 pm) or evenings (12 pm to 10 pm), one weekend a month
@@ -348,7 +551,6 @@ jobs:
       - use: work_authorization
       - use: years_rn
       - use: acute_care
-      - { id: compact, ask: "Do you also hold a multistate compact license?", kind: yes_no, good: "a plus", points: 10, fact: { cert: compact } }
       - { id: days_or_evenings, ask: "The role is four 10-hour shifts a week, days or evenings. Does that work for you?", kind: yes_no, knockout: true, points: 20, fact: { shift: days or evenings } }
       - use: start_date
       - use: pay_expectation
@@ -357,7 +559,6 @@ jobs:
       - *rn
       - { kind: required, name: "3 years as an RN", target: { years: 3 }, reason: "Triage by phone needs at least three years of bedside experience.", change: "Call us again once you have three years as an RN; our bedside roles are open now." }
       - { kind: required, name: "days or evenings", target: { shift: days or evenings }, reason: "This role is days or evenings.", change: "If days or evenings become possible, call this number." }
-      - { kind: bonus, name: "compact license", points: 15, target: { cert: compact } }
 
   - title: RN, Per diem float
     openings: 8
@@ -366,6 +567,26 @@ jobs:
     shift: per diem
     hours: own choice, at least 4 shifts a month
     pay: $70 to $85 an hour, no benefits
+    description:
+      about: >-
+        You fill open shifts across adult units at every Hudson Park hospital, picking at least four shifts a month.
+        Each shift may be a different floor, so you get oriented fast, take a full patient load, and work with teams
+        you may not know.
+      duties:
+        - Take a full patient assignment on whichever adult unit needs help
+        - Learn each unit's routines and equipment quickly
+        - Give medicines, treatments and care to unit standards
+        - Hand off clearly to the regular staff at shift change
+        - Keep competencies current for every unit you float to
+      requirements:
+        - Active New York State RN license
+        - Current BLS and ACLS
+        - At least two years of recent acute care RN experience
+        - Able to commit to the minimum number of shifts each month, including some weekends and holidays
+      preferred:
+        - Experience on two or more kinds of units
+        - Med-surg and telemetry experience
+        - Charge or preceptor experience
     facts:
       pay: $70 to $85 an hour, per diem, without benefits
       schedule: per diem, shifts you pick, at least four 12-hour shifts a month
@@ -399,6 +620,26 @@ jobs:
     shift: days
     hours: 3 x 12 h
     pay: $53 to $68 an hour
+    description:
+      about: >-
+        You care for adults with cancer on a 24-bed inpatient oncology unit on day shift, many of them getting
+        chemotherapy or managing side effects. The work mixes careful drug safety, symptom control, and steady
+        support for patients and families.
+      duties:
+        - Give chemotherapy and other cancer drugs using safe handling rules
+        - Manage pain, nausea, infection risk and other side effects
+        - Care for central lines and ports
+        - Watch for and respond to drug reactions and low blood counts
+        - Support patients and families and help with palliative care when needed
+      requirements:
+        - Active New York State RN license
+        - Current BLS
+        - At least one year of RN experience
+        - Able to work 12-hour day shifts, including rotating weekends and holidays
+      preferred:
+        - Chemotherapy and immunotherapy course
+        - OCN certification
+        - Oncology experience
     facts:
       pay: $53 to $68 an hour depending on experience
       schedule: three 12-hour day shifts a week, 7 am to 7 pm, every third weekend
@@ -432,6 +673,26 @@ jobs:
     shift: evenings
     hours: 4 x 10 h
     pay: $54 to $69 an hour, plus a $4 evening differential
+    description:
+      about: >-
+        You care for patients as they wake up from anesthesia in a 14-bay recovery unit, working 10-hour evening
+        shifts. The work is watching airway, breathing, pain and bleeding closely, then moving patients to a floor
+        or home once they are safe.
+      duties:
+        - Take report from anesthesia and the OR team on each patient
+        - Monitor airway, breathing, heart rate and pain closely after surgery
+        - Treat pain, nausea and low blood pressure to orders
+        - Recognize and respond to complications quickly
+        - Discharge outpatients with teaching or hand off to the inpatient unit
+      requirements:
+        - Active New York State RN license
+        - Current BLS and ACLS
+        - At least two years of acute care RN experience
+        - Able to work 10-hour evening shifts and stay late when cases run long
+      preferred:
+        - ICU or PACU experience
+        - PALS
+        - CPAN certification
     facts:
       pay: $54 to $69 an hour depending on experience, plus a $4 an hour evening differential
       schedule: four 10-hour shifts a week, 1 pm to 11 pm, no weekends, one call shift a month
@@ -464,6 +725,27 @@ jobs:
     shift: days
     hours: 5 x 8 h
     pay: $56 to $70 an hour
+    description:
+      about: >-
+        You are part of the wound and ostomy team that sees patients on every floor, working weekday 8-hour shifts.
+        You assess pressure injuries, surgical wounds and ostomies, set the care plan, and teach nurses and
+        patients.
+      duties:
+        - Assess and stage wounds and pressure injuries across the hospital
+        - Recommend treatments, dressings and support surfaces
+        - Care for new ostomies and teach patients how to manage them
+        - Train bedside nurses on skin care and prevention
+        - Track pressure injury rates and help with prevention work
+      requirements:
+        - Active New York State RN license
+        - Current BLS
+        - Board certification in wound care (for example CWOCN, CWON, CWCN or CWS)
+        - At least three years of RN experience
+        - Able to walk the hospital all day and help reposition patients
+      preferred:
+        - BSN
+        - Ostomy and continence certification
+        - Experience teaching staff
     facts:
       pay: $56 to $70 an hour depending on experience
       schedule: five 8-hour day shifts a week, 8 am to 4:30 pm, no weekends
@@ -493,6 +775,26 @@ jobs:
     shift: nights
     hours: 3 x 12 h
     pay: $40 to $52 an hour, plus a $5 night differential
+    description:
+      about: >-
+        You care for patients with breathing problems in the ICUs and on the floors overnight. Most of the night is
+        managing ventilators, giving breathing treatments, and answering rapid responses and codes.
+      duties:
+        - Set up, monitor and adjust ventilators and other breathing support
+        - Give breathing treatments and do airway clearance
+        - Draw and run arterial blood gases
+        - Respond to rapid responses and codes and help with intubation
+        - Teach patients about inhalers and home oxygen
+      requirements:
+        - New York State respiratory therapist license
+        - RRT credential
+        - Current BLS
+        - Able to work 12-hour nights, including weekends and holidays
+        - Able to move equipment and stand and walk most of the shift
+      preferred:
+        - ICU ventilator experience
+        - ACLS
+        - PALS or NRP for children and newborns
     facts:
       pay: $40 to $52 an hour depending on experience, plus a $5 an hour night differential
       schedule: three 12-hour night shifts a week, 7 pm to 7 am, every third weekend
@@ -522,6 +824,23 @@ jobs:
     shift: evenings
     hours: 5 x 8 h
     pay: $21 to $25 an hour
+    description:
+      about: >-
+        You run the front desk for two medical floors on evening shifts. You answer phones and call lights, enter
+        and track orders, set up admissions and discharges, and keep the floor organized for nurses and doctors.
+      duties:
+        - Answer phones and greet patients, families and visitors
+        - Enter orders and track tests, consults and transport
+        - Set up admissions, transfers and discharges in the computer system
+        - Keep charts, forms and supplies in order
+        - Pass messages between nurses, doctors and other departments
+      requirements:
+        - High school diploma or equivalent
+        - Good computer and phone skills
+        - Able to work 8-hour evening shifts
+      preferred:
+        - One year at a front desk, ideally in health care
+        - Medical terminology
     facts:
       pay: $21 to $25 an hour depending on experience
       schedule: five 8-hour evening shifts a week, 3 pm to 11:30 pm, every other weekend
@@ -548,6 +867,26 @@ jobs:
     shift: nights
     hours: 3 x 12 h
     pay: $60 to $74 an hour, plus a $6 night differential
+    description:
+      about: >-
+        You lead the night shift on the telemetry and med-surg floors, running the unit while still helping with
+        care. You make assignments, handle admissions and problems, and are the go-to person for staff and families
+        overnight.
+      duties:
+        - Make nurse and aide assignments and adjust them through the night
+        - Manage admissions, transfers and bed flow with the house supervisor
+        - Support staff with hard patients and lead rapid responses
+        - Handle family concerns and staffing problems as they come up
+        - Report unit status to the day charge nurse and manager
+      requirements:
+        - Active New York State RN license
+        - Current BLS and ACLS
+        - At least five years of RN experience
+        - Able to work 12-hour nights, including rotating weekends and holidays
+      preferred:
+        - Telemetry experience
+        - Past charge nurse or preceptor experience
+        - BSN
     facts:
       pay: $60 to $74 an hour depending on experience, plus a $6 an hour night differential
       schedule: three 12-hour night shifts a week, 7 pm to 7 am, every third weekend
@@ -581,6 +920,26 @@ jobs:
     shift: evenings
     hours: 3 x 12 h
     pay: $51 to $65 an hour, plus a $4 evening differential
+    description:
+      about: >-
+        You care for adults with serious mental illness on a 30-bed inpatient psychiatric unit on evening shifts.
+        The work is keeping the unit safe, giving medicines, running groups, and calming tense situations before
+        they turn into crises.
+      duties:
+        - Assess mental status and risk of harm to self or others
+        - Give psychiatric medicines and watch for side effects
+        - Use calm talk and other non-physical ways to de-escalate
+        - Lead or co-lead patient groups
+        - Follow the rules on restraint, seclusion and patient rights
+      requirements:
+        - Active New York State RN license
+        - Current BLS
+        - Able to work 12-hour evening shifts, including weekends and holidays
+        - Complete a de-escalation and safe restraint course at hire
+      preferred:
+        - Inpatient psychiatric experience
+        - CPI or similar de-escalation certification
+        - Psychiatric nursing certification (PMH-BC)
     facts:
       pay: $51 to $65 an hour depending on experience, plus a $4 an hour evening differential
       schedule: three 12-hour evening shifts a week, 11 am to 11 pm, every third weekend
@@ -612,6 +971,26 @@ jobs:
     shift: days
     hours: 4 x 10 h
     pay: $50 to $63 an hour
+    description:
+      about: >-
+        You care for patients with kidney failure at an 18-chair outpatient dialysis center on weekday 10-hour
+        shifts. You start and end treatments, watch patients closely during the run, and teach them about diet,
+        medicines and access care.
+      duties:
+        - Assess patients before, during and after each treatment
+        - Access fistulas, grafts and catheters and start and end treatments
+        - Watch for low blood pressure, cramping and other problems during dialysis
+        - Give medicines ordered during treatment
+        - Teach patients about fluid limits, diet and access care
+      requirements:
+        - Active New York State RN license
+        - Current BLS
+        - At least one year of RN experience
+        - Able to work 10-hour day shifts, often starting early in the morning
+      preferred:
+        - Hemodialysis experience
+        - CNN or CDN certification
+        - Med-surg or step-down experience
     facts:
       pay: $50 to $63 an hour depending on experience
       schedule: four 10-hour shifts a week, 5 am to 3:30 pm, Monday to Saturday rotation
@@ -643,6 +1022,24 @@ jobs:
     shift: days
     hours: 5 x 8 h
     pay: $20 to $24 an hour
+    description:
+      about: >-
+        You support doctors and nurse practitioners in a busy primary care clinic on weekday 8-hour shifts. You room
+        patients, take vital signs, give shots, do simple tests, and keep the schedule moving.
+      duties:
+        - Room patients and take vital signs and history
+        - Give vaccines and injections as ordered
+        - Do EKGs, finger sticks, urine tests and blood draws
+        - Prepare exam rooms and help with procedures
+        - Update charts, send referrals and handle prescription refill requests
+      requirements:
+        - Medical assistant certification (CCMA, CMA or RMA)
+        - Able to work 8-hour day shifts, five days a week
+        - Comfortable with an electronic health record
+      preferred:
+        - Phlebotomy certification
+        - Bilingual English and Spanish
+        - One year of clinic experience
     facts:
       pay: $20 to $24 an hour depending on experience
       schedule: five 8-hour day shifts a week, 8 am to 4:30 pm, one Saturday a month
@@ -671,6 +1068,26 @@ jobs:
     shift: evenings
     hours: 3 x 12 h
     pay: $68 to $82 an hour
+    description:
+      about: >-
+        You see adults and children at a walk-in urgent care center on 12-hour evening shifts. You examine, diagnose
+        and treat a wide range of problems, from infections and injuries to rashes and minor procedures, and decide
+        who needs the emergency room.
+      duties:
+        - Examine, diagnose and treat walk-in patients of all ages
+        - Order and read X-rays and lab tests
+        - Prescribe medicines and write care plans
+        - Do minor procedures such as stitches, splints and drainage of abscesses
+        - Send patients to the ER or a specialist when needed and arrange follow-up
+      requirements:
+        - New York State RN license and NP certification
+        - National board certification as a family nurse practitioner
+        - Current BLS
+        - Able to work 12-hour evening shifts, including weekends
+      preferred:
+        - Urgent care or emergency experience
+        - DEA registration
+        - Spanish
     facts:
       pay: $68 to $82 an hour depending on experience
       schedule: three 12-hour shifts a week, 10 am to 10 pm, every other weekend
@@ -699,6 +1116,26 @@ jobs:
     shift: nights
     hours: 3 x 12 h
     pay: $55 to $70 an hour, plus a $6 night differential
+    description:
+      about: >-
+        You care for sick and premature newborns in a 24-bed level III NICU overnight. Each nurse has one to three
+        babies, and the work includes breathing support, IV nutrition, careful feeding, and helping parents learn to
+        care for their baby.
+      duties:
+        - Monitor and care for premature and critically ill newborns
+        - Manage breathing support, IV lines and nutrition
+        - Give weight-based medicines with careful double checks
+        - Attend high-risk deliveries and help with newborn resuscitation
+        - Teach and support parents and prepare them for going home
+      requirements:
+        - Active New York State RN license
+        - Current BLS and NRP
+        - At least one year of RN experience
+        - Able to work 12-hour nights, including rotating weekends and holidays
+      preferred:
+        - Level III or IV NICU experience
+        - RNC-NIC certification
+        - S.T.A.B.L.E. course
     facts:
       pay: $55 to $70 an hour depending on experience, plus a $6 an hour night differential
       schedule: three 12-hour night shifts a week, 7 pm to 7 am, every third weekend
@@ -733,6 +1170,26 @@ jobs:
     shift: days
     hours: 5 x 8 h
     pay: $56 to $72 an hour, plus call pay
+    description:
+      about: >-
+        You work as a circulating nurse in a 10-room main OR on weekday 8-hour shifts, with call. You prepare the
+        room, check in the patient, keep the case safe and sterile, and speak up for the patient while they are
+        asleep.
+      duties:
+        - Check in patients, confirm consents and run the safety time-out
+        - Set up rooms and equipment and keep the sterile field safe
+        - Circulate during cases and count sponges, needles and tools
+        - Track specimens and document the case
+        - Take call for urgent and emergency surgery
+      requirements:
+        - Active New York State RN license
+        - Current BLS
+        - Able to work 8-hour day shifts and take call, including nights and weekends
+        - Able to stand for long cases and move patients and equipment
+      preferred:
+        - One to two years of OR experience
+        - CNOR certification
+        - ACLS
     facts:
       pay: $56 to $72 an hour depending on experience, plus call pay
       schedule: five 8-hour day shifts a week, 7 am to 3:30 pm, with one call weekend a month
@@ -765,6 +1222,25 @@ jobs:
     shift: days
     hours: 5 x 8 h
     pay: $30 to $38 an hour, plus call pay
+    description:
+      about: >-
+        You scrub in on surgeries in a 10-room main OR on weekday 8-hour shifts, with call. You set up the sterile
+        instruments and supplies, pass them to the surgeon, and help keep the case safe and on time.
+      duties:
+        - Set up sterile instruments, supplies and equipment for each case
+        - Pass instruments and supplies to the surgeon during the case
+        - Keep the sterile field clean and count with the circulating nurse
+        - Handle specimens and prepare dressings at the end of the case
+        - Break down and send instruments to sterile processing
+      requirements:
+        - A national surgical technologist certification, such as the CST
+        - Graduate of an accredited surgical technology program
+        - Current BLS
+        - Able to work 8-hour day shifts and take call
+        - Able to stand for long cases and lift trays and equipment
+      preferred:
+        - One to two years in a large hospital OR
+        - Experience in several surgical services
     facts:
       pay: $30 to $38 an hour depending on experience, plus call pay
       schedule: five 8-hour day shifts a week, 7 am to 3:30 pm, with one call weekend a month
@@ -775,13 +1251,13 @@ jobs:
       remote: no, this is an in-person role
     questions:
       - use: work_authorization
-      - { id: cst, about: person, ask: "Are you a certified surgical technologist, CST?", kind: yes_no, knockout: true, points: 0, fact: { cert: CST } }
+      - { id: cst, about: person, ask: "Do you hold a national surgical technologist certification, such as the CST?", kind: yes_no, knockout: true, points: 0, fact: { cert: CST } }
       - { id: years_st, ask: "How many years have you scrubbed cases?", kind: number, good: "at least 1", points: 25 }
       - { id: call, ask: "The role is weekdays with one call weekend a month. Does that work for you?", kind: yes_no, knockout: true, points: 20, fact: { shift: days } }
       - use: start_date
       - use: pay_expectation
     criteria:
-      - { kind: required, name: "CST", target: { cert: CST }, reason: "New York requires surgical technologists to be certified.", change: "Once you are certified, call this number." }
+      - { kind: required, name: "CST", target: { cert: CST }, reason: "New York requires surgical technologists to have finished an accredited program and to hold a national certification.", change: "Once you hold a national certification, call this number." }
       - *bls
       - { kind: required, name: "days", target: { shift: days }, reason: "This role is days with call.", change: "If days become possible, call this number." }
 
@@ -792,6 +1268,26 @@ jobs:
     shift: days
     hours: 5 x 8 h
     pay: $54 to $67 an hour
+    description:
+      about: >-
+        You plan safe discharges for patients on the inpatient floors on weekday 8-hour shifts. You review each stay
+        against insurance criteria, work with doctors, social workers and families, and line up home care, rehab or
+        equipment.
+      duties:
+        - Review patient stays against insurance and medical necessity criteria
+        - Plan discharges with patients, families, doctors and social workers
+        - Arrange home care, rehab, nursing home placement and equipment
+        - Talk with insurers about approvals and days of stay
+        - Give patients required notices about their rights at discharge
+      requirements:
+        - Active New York State RN license
+        - At least three years of acute care RN experience
+        - Able to work 8-hour day shifts, five days a week
+        - Comfortable with an electronic health record
+      preferred:
+        - Experience with InterQual or MCG criteria
+        - CCM or ACM certification
+        - BSN
     facts:
       pay: $54 to $67 an hour depending on experience
       schedule: five 8-hour day shifts a week, 8 am to 4:30 pm, one weekend a month
@@ -822,6 +1318,25 @@ jobs:
     shift: days
     hours: 5 x 8 h
     pay: $22 to $27 an hour
+    description:
+      about: >-
+        You draw blood from patients on every floor as part of the lab draw team, working weekday 8-hour shifts. You
+        collect samples on time, label them correctly, and help keep patients calm.
+      duties:
+        - Draw blood from adults and children on all floors
+        - Confirm patient identity and label every sample correctly
+        - Collect timed draws and blood cultures on schedule
+        - Send samples to the lab and log them
+        - Follow infection control and safety rules
+      requirements:
+        - National phlebotomy certification
+        - High school diploma or GED
+        - Able to work 8-hour day shifts, five days a week
+        - Able to walk the hospital most of the shift
+      preferred:
+        - One year of hospital phlebotomy experience
+        - Pediatric draws
+        - BLS
     facts:
       pay: $22 to $27 an hour depending on experience
       schedule: five 8-hour shifts a week, 5 am to 1:30 pm, every other weekend

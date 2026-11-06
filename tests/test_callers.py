@@ -12,9 +12,22 @@ from livekit.agents.beta.tools import EndCallTool
 from riley import brain, keys, seed
 from riley.main import config
 from riley.screener import END_WORDS, Screen, Screener, settled
+from evals.judge import verdict
 
 keys.load()
 JUDGE = brain.Claude('claude-haiku-5-5')
+# Each turn's result -> the caller's lines and every result of its call, so a verdict keeps the conversation it judged
+TURNS: dict[int, tuple[list[str], list, int]] = {}
+
+
+def heard(results: list, turns: list[str]) -> None:
+    for i, r in enumerate(results):
+        TURNS[id(r)] = (turns, results, i)
+
+
+def riley(result) -> list[str]:
+    return [e.item.text_content for e in result.events
+            if e.type == 'message' and e.item.role == 'assistant' and e.item.text_content]
 
 
 async def call(turns: list[str], prefilled: dict | None = None, carried: dict | None = None,
@@ -28,22 +41,25 @@ async def call(turns: list[str], prefilled: dict | None = None, carried: dict | 
     await session.start(Screener(cfg, prefilled=prefilled, carried=carried, jobs=jobs,
                                  tools=[EndCallTool(end_instructions=END_WORDS)]))
     results = [await session.run(user_input=t) for t in turns]
+    heard(results, turns)
     return session, screen, results
 
 
 async def judge(result, intent: str, which: str = 'last'):
     """Judge what Riley said in this turn. A turn with a tool call has a reply before and after it: 'last' judges the
-    final one, 'any' passes when one of them meets the intent."""
-    said = [i for i, e in enumerate(result.events) if e.type == 'message' and e.item.role == 'assistant']
-    if which == 'last':
-        return await result.expect[said[-1]].is_message(role='assistant').judge(JUDGE, intent=intent)
+    final one, 'any' passes when one of them meets the intent. Every verdict, with its reason, is kept for the console's
+    Checks page (evals.judge)."""
+    turns, results, n = TURNS.get(id(result), ([], [], 0))
+    before = [m for j in range(n) for m in ([{'role': 'caller', 'text': turns[j]}]
+                                            + [{'role': 'riley', 'text': t} for t in riley(results[j])])]
+    said = riley(result)
     misses = []
-    for i in said:
-        try:
-            return await result.expect[i].is_message(role='assistant').judge(JUDGE, intent=intent)
-        except AssertionError as e:
-            misses.append(str(e))
-    raise AssertionError(' | '.join(misses))
+    for text in (said[-1:] if which == 'last' else said):
+        v = await verdict(JUDGE, intent, text, caller=turns[n] if turns else None, before=before)
+        if v['passed']:
+            return v
+        misses.append(v['reason'])
+    raise AssertionError(f"Judgement failed: {' | '.join(misses) or 'Riley said nothing'}")
 
 
 FULL = ['Yes, now works.', 'Yes, I have an active New York RN license.', 'Yes I am.', 'About four years.',
@@ -219,6 +235,7 @@ async def help_call(turns: list[str], who: dict | None = None):
     session = AgentSession[Help](llm=llm_, userdata=help)
     await session.start(HelpLine(cfg, ROWS, who=who, tools=[EndCallTool(end_instructions=END_WORDS)]))
     results = [await session.run(user_input=t) for t in turns]
+    heard(results, turns)
     return session, help, results
 
 

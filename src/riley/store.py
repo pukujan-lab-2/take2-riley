@@ -184,6 +184,8 @@ create index if not exists candidates_expires on candidates (expires) where gues
 -- The recruiter console (web/console.py): the file a vacancy was opened from, and job-board postings. Postings are a
 -- demo record only: nothing is sent to any board until each one grants partner access.
 alter table jobs add column if not exists source_file text;
+-- The posting as people read it on the console: {about, duties, requirements, preferred}. Riley's call uses facts only.
+alter table jobs add column if not exists description jsonb;
 create table if not exists job_postings (
   id bigserial primary key,
   sandbox text not null,
@@ -434,7 +436,9 @@ def call_answers(apps: list[dict], current_id: int) -> tuple[dict, dict]:
     (from the resume, waiting to be confirmed) and (confirmed on an earlier call for another role).
     Answers are stored as {id: {value, source, confirmed, meets}}; the screener uses {answer, meets, source}."""
     def as_screen(v: dict) -> dict:
-        return {'answer': v['value'], 'meets': v.get('meets', 'unclear'), 'source': v.get('source', 'resume')}
+        out = {'answer': v['value'], 'meets': v.get('meets', 'unclear'), 'source': v.get('source', 'resume')}
+        # a resume answer in other words than the job's (riley/guest.py gap): what the job needs, for the one question
+        return {**out, 'needs': v['needs']} if v.get('needs') else out
     resume, earlier = {}, {}
     for a in apps:
         for qid, v in (_j_load(a.get('answers')) or {}).items():
@@ -445,11 +449,17 @@ def call_answers(apps: list[dict], current_id: int) -> tuple[dict, dict]:
     return resume, earlier
 
 
-def stored_answers(screen_answers: dict) -> dict:
-    """The call's answers in the stored shape."""
-    return {i: {'value': v['answer'], 'meets': v['meets'], 'source': v.get('source', 'call'),
-                'confirmed': v.get('confirmed', True), **({'earlier': v['earlier']} if v.get('earlier') else {})}
-            for i, v in screen_answers.items()}
+def stored_answers(screen_answers: dict, prefilled: dict | None = None) -> dict:
+    """The call's answers in the stored shape. Where the resume said it in other words than the job's (an item with
+    `needs`) and the caller answered on the call, the record keeps all three for Dana: `resume` (what it said),
+    `needs` (what the job asks for) and the value (what they said)."""
+    out = {}
+    for i, v in screen_answers.items():
+        out[i] = {'value': v['answer'], 'meets': v['meets'], 'source': v.get('source', 'call'),
+                  'confirmed': v.get('confirmed', True), **({'earlier': v['earlier']} if v.get('earlier') else {})}
+        if (was := (prefilled or {}).get(i)) and was.get('needs') and out[i]['source'] == 'call':
+            out[i] |= {'resume': was['answer'], 'needs': was['needs']}
+    return out
 
 
 def _j_load(v):
@@ -472,10 +482,10 @@ async def for_call(sandbox: str, phone: str) -> tuple[dict | None, dict, dict]:
     return (current, *call_answers(apps, current['id']))
 
 
-async def save_answers(application_id: int, screen_answers: dict, score: dict) -> None:
+async def save_answers(application_id: int, screen_answers: dict, score: dict, prefilled: dict | None = None) -> None:
     await octo.query("update applications set answers = answers || $2, score = $3, status = 'screened', "
                      "updated = now() where id = $1",
-                     [application_id, _j(stored_answers(screen_answers)), _j(score)])
+                     [application_id, _j(stored_answers(screen_answers, prefilled)), _j(score)])
 
 
 async def job_for(sandbox: str, cfg: dict) -> dict:

@@ -112,6 +112,15 @@ def latency(history: list[dict]) -> list[dict]:
     return rows
 
 
+def picked_job(meta: dict, jobs: list[dict]) -> dict | None:
+    """The open job a browser call's dispatch names ({'job_id'} from /try), or None: an id not open is ignored."""
+    try:
+        job_id = int(meta.get('job_id') or '')
+    except (TypeError, ValueError):
+        return None
+    return next((j for j in jobs if j['id'] == job_id), None)
+
+
 async def entrypoint(ctx: JobContext):
     cfg = config()
     # A call Riley placed (riley/outbound.py) carries {'mode', 'candidate_id', 'application_id'} in its dispatch
@@ -173,6 +182,7 @@ async def entrypoint(ctx: JobContext):
             if demo:  # screened for the job they were given, with its facts and questions
                 cfg = job_config(cfg, demo)
                 app = {'id': demo['application_id'], 'candidate_id': demo['candidate_id']}
+                prefilled = guest.resume_answers(demo)  # their made-up resume, read back and one gap asked
             else:
                 app, prefilled, carried = await store.for_call('live', number)
             rows = [] if app or (meta and not callback) else await store.status('live', number)
@@ -211,7 +221,11 @@ async def entrypoint(ctx: JobContext):
             jobs = await asyncio.wait_for(match.open_jobs('live'), 3)
         except Exception as e:  # no list: the screen for screen.yaml's job, as before
             print('open jobs lookup failed:', type(e).__name__, e, flush=True)
-    screen = Screen(cfg=cfg, prefilled=prefilled, answers=settled(carried))
+    # A browser call from /try with a role picked (web/server.py api_talk): that job's questions and facts, no asking
+    picked = picked_job(meta, jobs) if source == 'web' else None
+    if picked:
+        cfg, jobs = job_config(cfg, picked), []
+    screen = Screen(cfg=cfg, prefilled=prefilled, answers=settled(carried), job=picked)
     help = helpline.Help(cfg, rows, rows[0].get('timezone') or 'America/New_York') if rows and not out else None
     state = follow or out or help or screen  # what the silence check-in and the speech filter read
     # A number on file: Riley checks the name and role before it says anything about them (riley/identity.py)
@@ -337,7 +351,7 @@ async def entrypoint(ctx: JobContext):
                         await _callback(app['candidate_id'], app['id'])
                     # someone else on their phone, or nothing said: the record is left as it was
                 elif app:
-                    await store.save_answers(app['id'], screen.answers, record['scorecard'])
+                    await store.save_answers(app['id'], screen.answers, record['scorecard'], screen.prefilled)
                     await _callback(app['candidate_id'], app['id'])
                     await _matches(app['candidate_id'])
                     decided = await _auto(app['id'])
@@ -424,8 +438,8 @@ async def entrypoint(ctx: JobContext):
         agent = outcomeline.OutcomeLine(cfg, out, who or {}, placed=meta.get('mode') in ('outcome', 'callback'),
                                         tools=[end])
     elif demo:
-        agent = Screener(cfg, demo={'name': demo['name'], 'title': demo['title'],
-                                    'hospital': demo.get('hospital') or cfg['agent']['employer']},
+        agent = Screener(cfg, prefilled=prefilled, demo={'name': demo['name'], 'title': demo['title'],
+                                                         'hospital': demo.get('hospital') or cfg['agent']['employer']},
                          outbound=bool(meta), on_language=_language, tools=[end])
     else:
         # A callback is a call Riley placed: it opens with who is calling and why (riley/identity.py hello)

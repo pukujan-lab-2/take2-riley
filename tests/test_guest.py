@@ -84,11 +84,12 @@ def test_made_up_names_are_never_riley():
     assert all(len(n.split()) == 2 and not n.startswith('Riley') for n in guest.NAMES)
 
 
-@given(st.dictionaries(st.sampled_from(['mode', 'candidate_id', 'application_id', 'message_id', 'phone', 'name',
-                                        'first_name', 'email']), st.integers(1, 99) | st.text(max_size=12)))
+@given(st.dictionaries(st.sampled_from(['mode', 'candidate_id', 'application_id', 'job_id', 'message_id', 'phone',
+                                        'name', 'first_name', 'email']), st.integers(1, 99) | st.text(max_size=12)))
 def test_room_metadata_holds_only_ids_and_the_mode(meta):
     meta['mode'] = 'guest'
-    assert set(json.loads(outbound.room_metadata(meta))) <= {'mode', 'candidate_id', 'application_id', 'message_id'}
+    assert set(json.loads(outbound.room_metadata(meta))) <= {'mode', 'candidate_id', 'application_id', 'job_id',
+                                                           'message_id'}
 
 
 class FakeLiveKit:
