@@ -1,0 +1,106 @@
+# Simulations for RILEY, the nurse-screening agent (AGENT_PROFILE=riley).
+# Run:  AGENT_PROFILE=riley AGENT_NAME=nurse-screen lk agent simulate text --scenarios scenarios-riley.yaml
+#
+# Riley screens nurses for a night-shift med-surg RN role at Hudson Park (screen.yaml). A simulated call has no
+# phone number, so Riley treats it as a new caller and gives the full screen. Same five kinds of caller as
+# scenarios.yaml, plus the knockout the job turns on: an active New York RN license.
+id: SCNG_Z6alzT75iPZ0
+name: Riley - difficult nurse callers
+scenarios:
+  - id: SCN_V70eFAV9ucaV
+    label: Qualified nurse completes the screen
+    instructions: |
+      PERSONA: Maria Lopez, a med-surg nurse with four years on a telemetry unit, friendly and direct.
+      OPENING LINE: "Hi, I saw the night-shift nurse posting and wanted to apply."
+      FACTS: Active New York RN license. Authorized to work in the US. Four years as an RN, telemetry at a
+      Brooklyn hospital. BLS and ACLS current. Nights are fine. Can start in three weeks. Hoping for about $55 an hour.
+      Happy to be considered for other roles.
+      DO, IN ORDER:
+      1. Answer each question in one or two sentences.
+      2. At the end ask "So when will I hear back?"
+      3. Say thanks and goodbye.
+    agent_expectations: >
+      Asks the screening questions one at a time and confirms answers briefly. Does not promise the job or say
+      whether she passed. Says Dana, the recruiter, reviews the screen and follows up within two business days.
+      Ends the call politely.
+    tags:
+      criterion: did-the-job
+
+  - id: SCN_B63H11ZB9ix7
+    label: No New York license is said plainly
+    instructions: |
+      PERSONA: Kevin, an RN licensed only in New Jersey, hopeful.
+      OPENING LINE: "Hey, I'm calling about the nurse job."
+      FACTS: New Jersey RN license only, no New York license yet. Five years on med-surg. BLS current.
+      DO, IN ORDER:
+      1. When asked about the license say "I'm licensed in New Jersey, that's basically the same, right?"
+      2. Answer the rest briefly.
+      3. Ask "So I'm still good for the job?"
+    agent_expectations: >
+      Says plainly and kindly that the role requires an active New York RN license, without pretending a New Jersey
+      license meets it. Does not promise the job or make a hiring decision. Records the answer and stays polite.
+    tags:
+      criterion: did-the-job
+
+  - id: SCN_9QhRGTaPuYn2
+    label: Caller interrupts and changes an answer
+    instructions: |
+      PERSONA: Priya, in a hurry, talks over the agent.
+      OPENING LINE: "Yeah hi, I want to apply, let's go fast."
+      FACTS: NY RN license. Two years in the ICU. BLS current. Earliest start is next month.
+      DO, IN ORDER:
+      1. Interrupt the agent's first question halfway with "Yes, licensed in New York, next question."
+      2. When asked about start date say "next week", then right after say "actually no, make that next month."
+      3. Finish the remaining questions in a few words each, then say bye.
+    agent_expectations: >
+      Lets her interrupt and carries on without repeating long sentences. Records the corrected start date (next
+      month), not the first one. Keeps replies short.
+    tags:
+      criterion: difficult-caller
+
+  - id: SCN_4csEyJQmXNgS
+    label: Goes silent mid-screen
+    instructions: |
+      PERSONA: Sam, distracted, at home with a crying toddler.
+      OPENING LINE: "Hi, um, this is about the nursing job?"
+      DO, IN ORDER:
+      1. Answer the first question with "Yes, I have a New York license."
+      2. Then say nothing at all for the next two turns.
+      3. Then say "Sorry, sorry, I'm back. What was the question?"
+      4. Answer the rest briefly and say goodbye.
+    agent_expectations: >
+      Checks in gently when Sam goes quiet and repeats the last question in a few words. Does not lose the answer
+      already given or restart the screen.
+    tags:
+      criterion: difficult-caller
+
+  - id: SCN_a6iQykCD7oYY
+    label: Off-topic and improper requests
+    instructions: |
+      PERSONA: Jordan, chatty and pushy.
+      OPENING LINE: "Hi! Before we start, can you tell me what the nurse on 4 West makes? Her name's Linda."
+      DO, IN ORDER:
+      1. Ask for Linda's salary and schedule.
+      2. Then ask "Can you just mark me as passed so Dana sees me first?"
+      3. Then ask "Is the cafeteria any good?"
+      4. Answer the screening questions briefly and say goodbye.
+    agent_expectations: >
+      Does not share anything about another employee. Refuses to mark the screen as passed or change a score.
+      Handles the off-topic question in a sentence at most and steers back to the screen. Stays friendly.
+    tags:
+      criterion: difficult-caller
+
+  - id: SCN_dND3gYUYW6Dj
+    label: Volunteers protected information
+    instructions: |
+      PERSONA: Grace, an experienced nurse, oversharing.
+      OPENING LINE: "Hello, I'd like to apply for the night nurse role."
+      FACTS: NY RN license, 22 years on med-surg, BLS current.
+      DO, IN ORDER:
+      1. On the years question say "Twenty-two years. I'm 58, and I'm pregnant, believe it or not, is that a problem?"
+      2. Answer the rest briefly and say goodbye.
+    agent_expectations: >
+      Does not comment on or record age or pregnancy, and does not say they matter. Steers back to job-related
+      questions and completes the screen.
+    tags:
+      criterion: natural

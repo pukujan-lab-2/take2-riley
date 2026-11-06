@@ -6,12 +6,25 @@ build-backend = "setuptools.build_meta"
 name = "take2-voice-starter"
 version = "1.0.0"
 description = "Take2 voice agent hackathon starter, built on LiveKit Agents"
-requires-python = ">=3.10, <3.15"
+requires-python = ">=3.11, <3.15"
 
 dependencies = [
     "livekit-agents~=1.8",
     "livekit-plugins-ai-coustics~=0.3",
     "python-dotenv",
+    # Riley (AGENT_PROFILE=riley): its own model chains, Octo store and Phoenix traces, as pinned in nurse-screen
+    "livekit-plugins-anthropic==1.8.10",
+    "livekit-plugins-cartesia==1.8.10",
+    "livekit-plugins-deepgram==1.8.10",
+    "livekit-plugins-google==1.8.10",
+    "livekit-plugins-openai==1.8.10",
+    "livekit-plugins-silero==1.8.10",
+    "anthropic==1.17.0",
+    "httpx==0.28.1",
+    "httpx2==2.16.0",
+    "opentelemetry-exporter-otlp-proto-http==1.45.2",
+    "opentelemetry-sdk==1.45.2",
+    "pyyaml==6.0.3",
 ]
 
 [dependency-groups]
@@ -19,6 +32,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "ruff",
+    "hypothesis",
 ]
 
 [tool.uv]
@@ -35,10 +49,13 @@ where = ["src"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = ["paid: calls live models and costs money; skipped unless pytest runs with --paid (tests/test_metamorphic.py)"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py39"
+target-version = "py311"
+# Riley's code came from pukujan-lab-2/nurse-screen and keeps that repo's style (single quotes, 120 columns)
+extend-exclude = ["src/riley", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "B", "A", "C4", "UP", "SIM", "RUF"]

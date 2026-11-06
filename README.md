@@ -1,3 +1,22 @@
+# Riley on the Take2 starter
+
+This fork of the Take2 starter (history kept below) runs **Riley**, a phone screener for night-shift med-surg
+nurses at a fictional Hudson Park hospital. Riley answers +1 631 709 0065, screens the caller, says plainly when an
+answer misses a required item (an active New York RN license), stores everything for Dana, the recruiter, and calls
+people back when they ask, or when they sign up on [riley.design-bakery.com/try](https://riley.design-bakery.com/try).
+
+- Profile: `AGENT_PROFILE=riley` in `src/agent.py`, code in `src/riley_agent.py` and `src/riley/`, moved from
+  `pukujan-lab-2/nurse-screen`. It uses the starter's turn detector, preemptive generation and ai_coustics noise
+  cancellation; it keeps its own silence check-in, models (`screen.yaml` `stack`: Claude Haiku > Sonnet > Gemini >
+  DeepSeek, Deepgram ears, Cartesia voice, each with a fallback), Octo store and Phoenix traces.
+- `AGENT_NAME=nurse-screen`: the number's dispatch rule (`dispatch-rule-riley.json`) and outbound calls name it.
+- Simulations: `AGENT_PROFILE=riley AGENT_NAME=nurse-screen lk agent simulate text --scenarios scenarios-riley.yaml`.
+- Tests: `uv run pytest tests` (the caller tests call the real model chain and a Claude judge).
+- Runs on the VPS as Komodo stack `take2-riley` (`deploy/`); merging to `main` deploys it within about 3 minutes.
+  The web pages (`/tracker`, `/console`, `/try`, `/deck`) stay in the nurse-screen repo.
+
+---
+
 # Take2 Voice Agent Hackathon — Starter
 
 Build a voice agent that does **one job on a real phone call**, then demo it live

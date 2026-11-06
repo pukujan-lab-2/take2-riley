@@ -31,3 +31,8 @@ KMS
 
 # GitHub CLI
 .github/personal-instructions.md
+
+# Riley
+calls/
+deploy/.env
+deploy/.deploy-failed

@@ -4,7 +4,7 @@ You mostly edit my_agent.py. Come here to change models, silence handling or
 turn-taking.
 
   .env.local
-    AGENT_PROFILE = booking | screener | mine     (which agent answers)
+    AGENT_PROFILE = booking | screener | mine | riley   (which agent answers)
     MODEL_PRESET  = budget  | quality             (see models.py)
     AGENT_NAME    = take2-agent                   (must match your dispatch rule)
 """
@@ -12,6 +12,7 @@ turn-taking.
 import asyncio
 import logging
 import os
+from collections.abc import Awaitable, Callable
 
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -28,6 +29,7 @@ from livekit.agents import (
 )
 from livekit.plugins import ai_coustics
 
+import riley_agent
 from booking_agent import BookingAgent
 from models import load_models
 from my_agent import MyAgent
@@ -41,6 +43,13 @@ AGENTS: dict[str, type[Agent]] = {
     "booking": BookingAgent,
     "screener": ScreenerAgent,
     "mine": MyAgent,
+    "riley": riley_agent.RileyAgent,
+}
+
+# Profiles that build their own session: Riley looks the caller up before it says a word and picks the agent from
+# that (see riley_agent.py). They use the same turn detector and noise cancellation as the entrypoint below.
+SESSIONS: dict[str, Callable[[JobContext], Awaitable[None]]] = {
+    "riley": riley_agent.entrypoint,
 }
 
 AGENT_NAME = os.getenv("AGENT_NAME", "take2-agent")
@@ -51,8 +60,12 @@ SILENCE_SECONDS = 8.0
 MAX_CHECK_INS = 2
 
 
+def profile_name() -> str:
+    return os.getenv("AGENT_PROFILE", "booking").strip().lower()
+
+
 def pick_agent() -> Agent:
-    profile = os.getenv("AGENT_PROFILE", "booking").strip().lower()
+    profile = profile_name()
     if profile not in AGENTS:
         raise ValueError(
             f"Unknown AGENT_PROFILE '{profile}'. Choose one of: {', '.join(AGENTS)}"
@@ -90,11 +103,17 @@ def handle_silence(session: AgentSession) -> None:
 
 
 server = AgentServer()
+if profile_name() == "riley":
+    # Riley's Silero VAD, loaded once per worker process
+    server.setup_fnc = riley_agent.prewarm
 
 
 @server.rtc_session(agent_name=AGENT_NAME)
 async def entrypoint(ctx: JobContext) -> None:
     ctx.log_context_fields = {"room": ctx.room.name}
+    if profile_name() in SESSIONS:
+        await SESSIONS[profile_name()](ctx)
+        return
     models = load_models()
 
     session = AgentSession(

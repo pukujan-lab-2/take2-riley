@@ -1,0 +1,50 @@
+# Komodo stack `take2-riley` on vps (server-management komodo/resources/take2-riley.toml). Keys live on the host,
+# never in git: the same env file as the nurse-screen repo's worker, which this one replaced on 6 Nov.
+# A LiveKit Agents worker with no ports: it dials out to LiveKit Cloud, which brings it the calls to +1 631 709 0065
+# and to the rooms Riley places through the riley-telnyx trunk. The web side (riley.design-bakery.com) stays in
+# pukujan-lab-2/nurse-screen's nurse-screen-web container.
+# TAG comes from deploy/.env, which deploy/vps/autodeploy.sh writes, so the running image names the commit it runs.
+services:
+  riley:
+    build: ..
+    image: take2-riley:${TAG:-dev}
+    container_name: take2-riley
+    restart: unless-stopped
+    # The calls and kept-greeting folders are root's, from the nurse-screen worker
+    user: "0:0"
+    env_file: /home/ubuntu/apps/nurse-screen.env
+    environment:
+      AGENT_PROFILE: riley
+      # The number's dispatch rule and riley/outbound.py both name this agent
+      AGENT_NAME: nurse-screen
+      COMMIT: ${TAG:-dev}
+      RILEY_VOICE_DIR: /app/voice
+      OCTO_URL: http://octo-api:3001/api
+      # The vault proxy for Riley's hearing and voice, on the same direct route (these win over the env file)
+      DEEPGRAM_BASE_URL: ws://octo-api:3001/api/vault/proxy/https://api.deepgram.com/v1/listen
+      CARTESIA_BASE_URL: http://octo-api:3001/api/vault/proxy/https://api.cartesia.ai
+    networks:
+      default: {}
+      octo: {}
+    # The Pro's speech server (Riley's backup ears and voice) through the SSH tunnel's relay on the docker0 gateway
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - /home/ubuntu/apps/nurse-screen-calls:/app/calls
+      - /home/ubuntu/apps/nurse-screen-voice:/app/voice
+    mem_limit: 4g
+    # On SIGTERM the worker takes no new calls and lets the ones in progress finish
+    stop_grace_period: 5m
+    logging:
+      driver: json-file
+      options: { max-size: 20m, max-file: "5" }
+
+networks:
+  # The Pro speech relay (socat on 172.17.0.1:18799) only accepts 172.16.0.0/12; nurse-screen has 172.16.42.0/24
+  default:
+    name: take2-riley_internal
+    ipam:
+      config: [{ subnet: 172.16.43.0/24 }]
+  # Octo runs on this host: reach octo-api directly, not through Cloudflare
+  octo:
+    name: octo_internal
+    external: true

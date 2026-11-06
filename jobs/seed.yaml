@@ -1,0 +1,381 @@
+# Demo data: Hudson Park Health's five sites and eleven open roles (docs/BUILD-PLAN.md, "Jobs, hospitals and shifts").
+# All made up; pay ranges are plausible for New York, not real offers. riley/seed.py writes it into a sandbox.
+#
+# questions: `use: <id>` takes that question from screen.yaml as it is; anything else is the role's own question.
+# `fact:` says what a confirmed answer tells us about the person, for matching (riley/match.py facts_from):
+#   {license: NY RN} or {shift: nights} for a yes/no, `years`, `certs` or `units` for words to read the facts from.
+# criteria targets: {license: ...}, {cert: ...} (or a list, any one counts), {years: N}, {shift: ...}, {unit: ...},
+# {units: N} (that many kinds of unit). reason and change are Dana's words when a required item falls short.
+
+benefits: &benefits health, dental and vision from day one, a 403(b) with a 5 percent match, and tuition help
+start: &start orientation classes start every two weeks
+
+# Dana's open interview times, shared by every seeded job unless a job lists its own.
+slots: &slots
+  - 2026-11-09T10:00:00-05:00
+  - 2026-11-09T14:00:00-05:00
+  - 2026-11-10T11:00:00-05:00
+  - 2026-11-10T16:00:00-05:00
+  - 2026-11-11T09:30:00-05:00
+  - 2026-11-12T13:00:00-05:00
+
+hospitals:
+  - { name: "Hudson Park Midtown", borough: Manhattan, address: "410 West 58th Street, New York, NY 10019" }
+  - { name: "Hudson Park Bronx", borough: Bronx, address: "2150 Grand Concourse, Bronx, NY 10457" }
+  - { name: "Hudson Park Brooklyn", borough: Brooklyn, address: "88 Flatbush Avenue Extension, Brooklyn, NY 11201" }
+  - { name: "Hudson Park Virtual Care", borough: remote, address: "works from home in New York State" }
+  - { name: "Hudson Park Float Pool", borough: any site, address: "every Hudson Park hospital" }
+
+# Shared required items, so each job says only what is its own.
+rn: &rn
+  kind: required
+  name: New York RN license
+  target: { license: NY RN }
+  reason: This role needs an active New York State RN license.
+  change: Once your New York license is active, call this number and we'll pick up where you left off.
+bls: &bls
+  kind: required
+  name: current BLS
+  target: { cert: BLS }
+  reason: This role needs a current BLS certification.
+  change: Renew your BLS and call this number; your answers and your date are kept.
+acls: &acls
+  kind: required
+  name: current ACLS
+  target: { cert: ACLS }
+  reason: This role needs a current ACLS certification.
+  change: With ACLS done, call this number and we'll look at this role again.
+
+jobs:
+  - title: RN, Medical-Surgical
+    hospital: Hudson Park Midtown
+    # The job screen.yaml describes: its questions and facts come from there, and the row screen.yaml made before
+    # this seed is taken over rather than a second one added (riley/seed.py).
+    from_screen: true
+    unit: 5 West, 32 beds
+    shift: nights
+    hours: 3 x 12 h
+    pay: $48 to $62 an hour, plus a $6 night differential
+    options: [{ kind: per_diem, note: "per diem nights on 5 West" }, { kind: site, note: "Hudson Park Bronx telemetry nights" }]
+    criteria:
+      - *rn
+      - *bls
+      - { kind: required, name: "1 year as an RN", target: { years: 1 }, reason: "This role needs at least a year of RN experience.", change: "Call us again once you have a year as an RN." }
+      - { kind: required, name: "nights", target: { shift: nights }, reason: "This role is nights only.", change: "If nights become possible, call this number." }
+      - { kind: weighted, name: "3 years as an RN", points: 20, target: { years: 3 } }
+      - { kind: bonus, name: "ACLS", points: 10, target: { cert: ACLS } }
+      - { kind: bonus, name: "telemetry", points: 10, target: { unit: telemetry } }
+
+  - title: RN, ICU
+    hospital: Hudson Park Midtown
+    unit: MICU, 16 beds
+    shift: days
+    hours: 3 x 12 h
+    pay: $55 to $72 an hour
+    facts:
+      pay: $55 to $72 an hour depending on experience
+      schedule: three 12-hour day shifts a week, 7 am to 7 pm, every third weekend
+      unit: a 16-bed medical ICU with a ratio of one nurse to two patients
+      location: Midtown Manhattan, a short walk from the 59th Street subway station
+      benefits: *benefits
+      start: *start
+      remote: no, this is an in-person bedside role
+    questions:
+      - use: license
+      - use: work_authorization
+      - use: years_rn
+      - use: acute_care
+      - use: certifications
+      - { id: icu, ask: "Have you worked in an ICU or other critical care unit? For how long?", kind: text, good: "two years or more of acute care, ICU counts most", points: 20, fact: units }
+      - { id: days, ask: "The role is three 12-hour day shifts a week, 7 am to 7 pm. Does that work for you?", kind: yes_no, knockout: true, points: 15, fact: { shift: days } }
+      - { id: ccrn, ask: "Do you have your CCRN?", kind: yes_no, good: "CCRN is a plus", points: 10, fact: { cert: CCRN } }
+      - use: start_date
+      - use: pay_expectation
+    options: [{ kind: shift, note: "the MICU night team, when it has an opening" }]
+    criteria:
+      - *rn
+      - *bls
+      - *acls
+      - { kind: required, name: "2 years of acute care", target: { years: 2 }, reason: "This role needs at least two years of acute care nursing.", change: "Call us again once you have two years; our med-surg and telemetry roles build toward it." }
+      - { kind: required, name: "days", target: { shift: days }, reason: "This role is days only.", change: "If days become possible, call this number." }
+      - { kind: bonus, name: "CCRN", points: 15, target: { cert: CCRN } }
+      - { kind: bonus, name: "ICU experience", points: 10, target: { unit: icu } }
+
+  - title: RN, Emergency
+    hospital: Hudson Park Midtown
+    unit: Emergency Department
+    shift: evenings
+    hours: 3 x 12 h
+    pay: $52 to $68 an hour, plus a $4 evening differential
+    facts:
+      pay: $52 to $68 an hour depending on experience, plus a $4 an hour evening differential
+      schedule: three 12-hour evening shifts a week, 11 am to 11 pm, every third weekend
+      unit: a 40-bay emergency department with a fast-track area
+      location: Midtown Manhattan, a short walk from the 59th Street subway station
+      benefits: *benefits
+      start: *start
+      remote: no, this is an in-person bedside role
+    questions:
+      - use: license
+      - use: work_authorization
+      - use: years_rn
+      - use: acute_care
+      - use: certifications
+      - { id: pals, ask: "Do you have current PALS? And TNCC?", kind: text, good: "PALS is required; TNCC is a plus", knockout_if: "no current PALS", points: 15, fact: certs }
+      - { id: evenings, ask: "The role is three 12-hour evening shifts a week, 11 am to 11 pm. Does that work for you?", kind: yes_no, knockout: true, points: 15, fact: { shift: evenings } }
+      - use: start_date
+      - use: pay_expectation
+    criteria:
+      - *rn
+      - *bls
+      - *acls
+      - { kind: required, name: "current PALS", target: { cert: PALS }, reason: "The emergency department sees children, so this role needs a current PALS.", change: "Once your PALS is done, call this number and we'll look again." }
+      - { kind: required, name: "1 year as an RN", target: { years: 1 }, reason: "This role needs at least a year of RN experience.", change: "Call us again once you have a year as an RN." }
+      - { kind: required, name: "evenings", target: { shift: evenings }, reason: "This role is evenings only.", change: "If evenings become possible, call this number." }
+      - { kind: bonus, name: "TNCC", points: 10, target: { cert: TNCC } }
+      - { kind: bonus, name: "emergency experience", points: 10, target: { unit: ed } }
+
+  - title: RN, Telemetry
+    hospital: Hudson Park Bronx
+    unit: step-down telemetry, 28 beds
+    shift: nights
+    hours: 3 x 12 h
+    pay: $50 to $64 an hour, plus a $6 night differential
+    facts:
+      pay: $50 to $64 an hour depending on experience, plus a $6 an hour night differential
+      schedule: three 12-hour night shifts a week, 7 pm to 7 am, every third weekend
+      unit: a 28-bed step-down telemetry unit with a ratio of one nurse to four patients
+      location: the Bronx, on the Grand Concourse near the 174th-175th Street station
+      benefits: *benefits
+      start: *start
+      remote: no, this is an in-person bedside role
+    questions:
+      - use: license
+      - use: work_authorization
+      - use: years_rn
+      - use: acute_care
+      - use: certifications
+      - { id: nights, ask: "The role is three 12-hour night shifts a week, 7 pm to 7 am. Does that work for you?", kind: yes_no, knockout: true, points: 20, fact: { shift: nights } }
+      - use: start_date
+      - use: pay_expectation
+    options: [{ kind: site, note: "Hudson Park Midtown med-surg nights" }]
+    criteria:
+      - *rn
+      - *bls
+      - *acls
+      - { kind: required, name: "1 year as an RN", target: { years: 1 }, reason: "This role needs at least a year of RN experience.", change: "Call us again once you have a year as an RN." }
+      - { kind: required, name: "nights", target: { shift: nights }, reason: "This role is nights only.", change: "If nights become possible, call this number." }
+      - { kind: bonus, name: "med-surg experience", points: 10, target: { unit: med-surg } }
+      - { kind: bonus, name: "telemetry experience", points: 10, target: { unit: telemetry } }
+
+  - title: LPN, Rehab
+    hospital: Hudson Park Bronx
+    unit: sub-acute rehab, 40 beds
+    shift: days
+    hours: 5 x 8 h
+    pay: $32 to $40 an hour
+    facts:
+      pay: $32 to $40 an hour depending on experience
+      schedule: five 8-hour day shifts a week, 7 am to 3:30 pm, every other weekend
+      unit: a 40-bed sub-acute rehab unit for patients after surgery or a stroke
+      location: the Bronx, on the Grand Concourse near the 174th-175th Street station
+      benefits: *benefits
+      start: *start
+      remote: no, this is an in-person bedside role
+    questions:
+      - { id: license_lpn, about: person, ask: "Do you hold an active Licensed Practical Nurse license in New York State?", kind: yes_no, knockout: true, points: 0, fact: { license: NY LPN } }
+      - use: work_authorization
+      - { id: years_lpn, ask: "How many years have you worked as an LPN?", kind: number, good: "at least 1", points: 25 }
+      - use: certifications
+      - { id: iv, ask: "Are you IV certified?", kind: yes_no, good: "IV certification is a plus", points: 15, fact: { cert: IV } }
+      - { id: days, ask: "The role is five 8-hour day shifts a week, 7 am to 3:30 pm. Does that work for you?", kind: yes_no, knockout: true, points: 20, fact: { shift: days } }
+      - use: start_date
+      - use: pay_expectation
+    criteria:
+      - { kind: required, name: "New York LPN license", target: { license: NY LPN }, reason: "This role needs an active New York State LPN license.", change: "Once your New York LPN license is active, call this number." }
+      - *bls
+      - { kind: required, name: "days", target: { shift: days }, reason: "This role is days only.", change: "If days become possible, call this number." }
+      - { kind: bonus, name: "IV certification", points: 15, target: { cert: IV } }
+
+  - title: Patient Care Technician
+    hospital: Hudson Park Bronx
+    unit: med-surg, 32 beds
+    shift: nights
+    hours: 3 x 12 h
+    pay: $22 to $27 an hour, plus a $2 night differential
+    facts:
+      pay: $22 to $27 an hour depending on experience, plus a $2 an hour night differential
+      schedule: three 12-hour night shifts a week, 7 pm to 7 am, every third weekend
+      unit: a 32-bed medical-surgical unit, working with the nurses on vitals, EKGs and blood draws
+      location: the Bronx, on the Grand Concourse near the 174th-175th Street station
+      benefits: *benefits
+      start: *start
+      remote: no, this is an in-person bedside role
+    questions:
+      - use: work_authorization
+      - { id: pct_cert, about: person, ask: "Do you have a Patient Care Technician or CNA certificate?", kind: text, good: "either one", knockout_if: "neither", points: 0, fact: certs }
+      - use: certifications
+      - { id: skills, ask: "Have you done EKGs or phlebotomy on the job?", kind: text, good: "either is a plus", points: 25, fact: certs }
+      - { id: nights, ask: "The role is three 12-hour night shifts a week, 7 pm to 7 am. Does that work for you?", kind: yes_no, knockout: true, points: 25, fact: { shift: nights } }
+      - use: start_date
+      - use: pay_expectation
+    criteria:
+      - *bls
+      - { kind: required, name: "PCT or CNA certificate", target: { cert: [PCT, CNA] }, reason: "This role needs a Patient Care Technician or CNA certificate.", change: "With either certificate, call this number and we'll pick it up." }
+      - { kind: required, name: "nights", target: { shift: nights }, reason: "This role is nights only.", change: "If nights become possible, call this number." }
+      - { kind: bonus, name: "EKG", points: 10, target: { cert: EKG } }
+      - { kind: bonus, name: "phlebotomy", points: 10, target: { cert: phlebotomy } }
+
+  - title: RN, Labor and Delivery
+    hospital: Hudson Park Brooklyn
+    unit: Labor and Delivery, 12 rooms
+    shift: nights
+    hours: 3 x 12 h
+    pay: $52 to $66 an hour, plus a $6 night differential
+    facts:
+      pay: $52 to $66 an hour depending on experience, plus a $6 an hour night differential
+      schedule: three 12-hour night shifts a week, 7 pm to 7 am, every third weekend
+      unit: a 12-room labor and delivery unit with about 2,400 births a year
+      location: downtown Brooklyn, near the DeKalb Avenue station
+      benefits: *benefits
+      start: *start
+      remote: no, this is an in-person bedside role
+    questions:
+      - use: license
+      - use: work_authorization
+      - use: years_rn
+      - { id: ld, ask: "Have you worked in labor and delivery? For how long?", kind: text, good: "at least a year in L&D", knockout_if: "no labor and delivery experience", points: 25, fact: units }
+      - use: certifications
+      - { id: nrp, ask: "Do you have current NRP? And have you done fetal monitoring training?", kind: text, good: "NRP is required; fetal monitoring is a plus", knockout_if: "no current NRP", points: 10, fact: certs }
+      - { id: nights, ask: "The role is three 12-hour night shifts a week, 7 pm to 7 am. Does that work for you?", kind: yes_no, knockout: true, points: 15, fact: { shift: nights } }
+      - use: start_date
+      - use: pay_expectation
+    criteria:
+      - *rn
+      - *bls
+      - { kind: required, name: "current NRP", target: { cert: NRP }, reason: "This role needs a current NRP certification.", change: "Once your NRP is done, call this number." }
+      - { kind: required, name: "labor and delivery experience", target: { unit: l&d }, reason: "This role needs at least a year in labor and delivery.", change: "Our med-surg roles are open to you now; call again once you have L&D experience." }
+      - { kind: required, name: "1 year as an RN", target: { years: 1 }, reason: "This role needs at least a year of RN experience.", change: "Call us again once you have a year as an RN." }
+      - { kind: required, name: "nights", target: { shift: nights }, reason: "This role is nights only.", change: "If nights become possible, call this number." }
+      - { kind: bonus, name: "fetal monitoring", points: 10, target: { cert: fetal monitoring } }
+
+  - title: RN, Pediatrics
+    hospital: Hudson Park Brooklyn
+    unit: pediatrics floor, 20 beds
+    shift: days
+    hours: 3 x 12 h
+    pay: $50 to $63 an hour
+    facts:
+      pay: $50 to $63 an hour depending on experience
+      schedule: three 12-hour day shifts a week, 7 am to 7 pm, every third weekend
+      unit: a 20-bed pediatrics floor for children from newborns to teens
+      location: downtown Brooklyn, near the DeKalb Avenue station
+      benefits: *benefits
+      start: *start
+      remote: no, this is an in-person bedside role
+    questions:
+      - use: license
+      - use: work_authorization
+      - use: years_rn
+      - use: acute_care
+      - use: certifications
+      - { id: pals, ask: "Do you have current PALS?", kind: yes_no, knockout: true, points: 15, fact: { cert: PALS } }
+      - { id: peds, ask: "Have you nursed children before, on a pediatric unit or as a school nurse?", kind: text, good: "any pediatric nursing counts", points: 15, fact: units }
+      - { id: days, ask: "The role is three 12-hour day shifts a week, 7 am to 7 pm. Does that work for you?", kind: yes_no, knockout: true, points: 15, fact: { shift: days } }
+      - use: start_date
+      - use: pay_expectation
+    criteria:
+      - *rn
+      - *bls
+      - { kind: required, name: "current PALS", target: { cert: PALS }, reason: "This role needs a current PALS certification.", change: "Once your PALS is done, call this number." }
+      - { kind: required, name: "days", target: { shift: days }, reason: "This role is days only.", change: "If days become possible, call this number." }
+      # School nursing would count as a transferable skill only once Dana approves it (criteria.mappings stays empty)
+      - { kind: bonus, name: "pediatric experience", points: 15, target: { unit: peds } }
+
+  - title: CNA, Long-term care
+    hospital: Hudson Park Brooklyn
+    unit: long-term care, 60 beds
+    shift: weekends
+    hours: 2 x 12 h
+    pay: $21 to $26 an hour, plus a $2 weekend differential
+    facts:
+      pay: $21 to $26 an hour depending on experience, plus a $2 an hour weekend differential
+      schedule: two 12-hour shifts, Saturday and Sunday, 7 am to 7 pm
+      unit: a 60-bed long-term care unit
+      location: downtown Brooklyn, near the DeKalb Avenue station
+      benefits: *benefits
+      start: *start
+      remote: no, this is an in-person role
+    questions:
+      - { id: license_cna, about: person, ask: "Are you a Certified Nursing Assistant on the New York registry?", kind: yes_no, knockout: true, points: 0, fact: { license: NY CNA } }
+      - use: work_authorization
+      - { id: years_cna, ask: "How many years have you worked as a CNA?", kind: number, good: "at least 1", points: 30 }
+      - use: certifications
+      - { id: weekends, ask: "The role is Saturday and Sunday, two 12-hour day shifts. Does that work for you?", kind: yes_no, knockout: true, points: 30, fact: { shift: weekends } }
+      - use: start_date
+      - use: pay_expectation
+    criteria:
+      - { kind: required, name: "New York CNA certification", target: { license: NY CNA }, reason: "This role needs a current New York CNA certification.", change: "Once you're on the New York CNA registry, call this number." }
+      - *bls
+      - { kind: required, name: "weekends", target: { shift: weekends }, reason: "This role is weekends only.", change: "If weekends become possible, call this number." }
+
+  - title: RN, Telehealth triage
+    hospital: Hudson Park Virtual Care
+    unit: remote triage line
+    shift: days or evenings
+    hours: 4 x 10 h
+    pay: $47 to $58 an hour
+    facts:
+      pay: $47 to $58 an hour depending on experience
+      schedule: four 10-hour shifts a week, days (8 am to 6 pm) or evenings (12 pm to 10 pm), one weekend a month
+      unit: the nurse triage line, answering patients' calls and video visits
+      location: remote, from home anywhere in New York State, with a quiet private room
+      benefits: *benefits
+      start: *start
+      remote: yes, fully remote; we send the laptop and headset
+    questions:
+      - use: license
+      - use: work_authorization
+      - use: years_rn
+      - use: acute_care
+      - { id: compact, ask: "Do you also hold a multistate compact license?", kind: yes_no, good: "a plus", points: 10, fact: { cert: compact } }
+      - { id: days_or_evenings, ask: "The role is four 10-hour shifts a week, days or evenings. Does that work for you?", kind: yes_no, knockout: true, points: 20, fact: { shift: days or evenings } }
+      - use: start_date
+      - use: pay_expectation
+    options: [{ kind: shift, note: "evenings or days, whichever they prefer" }]
+    criteria:
+      - *rn
+      - { kind: required, name: "3 years as an RN", target: { years: 3 }, reason: "Triage by phone needs at least three years of bedside experience.", change: "Call us again once you have three years as an RN; our bedside roles are open now." }
+      - { kind: required, name: "days or evenings", target: { shift: days or evenings }, reason: "This role is days or evenings.", change: "If days or evenings become possible, call this number." }
+      - { kind: bonus, name: "compact license", points: 15, target: { cert: compact } }
+
+  - title: RN, Per diem float
+    hospital: Hudson Park Float Pool
+    unit: any adult unit
+    shift: per diem
+    hours: own choice, at least 4 shifts a month
+    pay: $70 to $85 an hour, no benefits
+    facts:
+      pay: $70 to $85 an hour, per diem, without benefits
+      schedule: per diem, shifts you pick, at least four 12-hour shifts a month
+      unit: any adult unit at any Hudson Park hospital, wherever the need is that day
+      location: any Hudson Park site in Manhattan, the Bronx or Brooklyn
+      benefits: none, as a per diem role; the higher rate is instead of benefits
+      start: *start
+      remote: no, this is an in-person bedside role
+    questions:
+      - use: license
+      - use: work_authorization
+      - use: years_rn
+      - use: acute_care
+      - use: certifications
+      - { id: per_diem, ask: "Float shifts are per diem, at least four a month, on any adult unit. Does that work?", kind: yes_no, knockout: true, points: 20, fact: { shift: per diem } }
+      - use: start_date
+      - use: pay_expectation
+    criteria:
+      - *rn
+      - *bls
+      - *acls
+      - { kind: required, name: "2 years as an RN", target: { years: 2 }, reason: "Floating needs at least two years of acute care.", change: "Call us again once you have two years." }
+      - { kind: required, name: "per diem", target: { shift: per diem }, reason: "This role is per diem only.", change: "Our full-time roles may suit you better; ask Riley about them." }
+      - { kind: bonus, name: "several units", points: 15, target: { units: 2 } }

@@ -1,0 +1,152 @@
+# Everything the judges might ask us to change lives here. The code reads it at the start of every call,
+# so an edit applies to the next call without a restart.
+
+agent:
+  name: Riley
+  employer: Hudson Park Hospital          # fictional; rename to the judges' scenario
+  role: Registered Nurse, Medical-Surgical unit, nights
+  recruiter: Dana                         # the human who reviews every screen
+  title: night-shift med-surg nurse       # the role as Riley says it, and the job's name in Octo before the seed
+  job: RN, Medical-Surgical               # the same job's name in jobs/seed.yaml, once seeded (store.job_for)
+  unknown_caller_name: John Doe           # the name on file for a caller first screened from a new number
+  callback_promise: within two business days
+  minutes: 5                              # how long we tell the caller it takes
+
+# What the agent may say about the job when the caller asks. Anything not here: "I'll have Dana follow up".
+job_facts:
+  pay: $48 to $62 an hour depending on experience, plus a $6 an hour night differential
+  schedule: three 12-hour night shifts a week, 7 pm to 7 am, every third weekend
+  sign_on_bonus: $10,000 paid over the first year
+  unit: a 32-bed medical-surgical unit with a typical ratio of one nurse to five patients
+  location: Midtown Manhattan, a short walk from the 59th Street subway station
+  benefits: health, dental and vision from day one, a 403(b) with a 5 percent match, and tuition help
+  start: orientation classes start every two weeks
+  remote: no, this is an in-person bedside role
+  requirements: an active New York State RN license, authorization to work in the United States, a current BLS certification, and three 12-hour night shifts a week; ACLS and at least a year of acute care are a plus
+
+# Asked in this order, one at a time. kind: yes_no | number | text | date.
+# knockout: a "no" is flagged for the recruiter (the agent never rejects anyone itself).
+# points: how much a good answer adds to the score; good says what counts as good.
+# fact: what a confirmed answer says about the person, for matching other roles (riley/match.py facts_from).
+questions:
+  - id: license
+    about: person   # carries over to a second role
+    ask: Do you hold an active Registered Nurse license in New York State?
+    kind: yes_no
+    knockout: true
+    points: 0
+    fact: { license: NY RN }
+  - id: work_authorization
+    about: person   # carries over to a second role
+    ask: Are you legally authorized to work in the United States?
+    kind: yes_no
+    knockout: true
+    points: 0
+  - id: years_rn
+    about: person   # carries over to a second role
+    ask: How many years have you worked as a Registered Nurse?
+    kind: number
+    good: at least 1
+    points: 30
+    fact: years
+  - id: acute_care
+    about: person   # carries over to a second role
+    ask: Have you worked on a medical-surgical or other acute care hospital unit? Which one?
+    kind: text
+    good: any hospital inpatient unit counts; med-surg, telemetry or step-down count most
+    points: 25
+    fact: units
+  - id: certifications
+    about: person   # carries over to a second role
+    ask: Is your BLS certification current? And do you also have ACLS?
+    kind: text
+    good: BLS is required; ACLS is a plus
+    knockout_if: no current BLS
+    points: 15
+    fact: certs
+  - id: nights
+    ask: The role is three 12-hour night shifts a week, 7 pm to 7 am. Does that work for you?
+    kind: yes_no
+    knockout: true
+    points: 20
+    fact: { shift: nights }
+  - id: start_date
+    ask: When is the earliest you could start?
+    kind: date
+    good: within 6 weeks
+    points: 10
+  - id: pay_expectation
+    ask: What hourly rate are you hoping for?
+    kind: text
+    good: within or near the range we can share
+    points: 0
+  - id: other_roles
+    about: person   # asked once, near the end (docs/BUILD-PLAN.md, "Matching")
+    ask: If this one isn't the right fit, may we also consider you for our other open roles?
+    kind: yes_no
+    good: yes means they agree; either answer is fine
+    points: 0
+    fact: { consent: other_roles }
+
+rules:
+  # Never asked, never recorded, never scored, even when the caller volunteers it.
+  protected_topics: [age, date of birth, race, religion, national origin, citizenship beyond work authorization,
+    marital status, pregnancy, children or childcare, disability or health conditions, sexual orientation,
+    gender identity, arrests, salary history at past jobs]
+  silence_seconds: 7                      # quiet this long: check in once; quiet again: wrap up kindly
+  max_reasks: 1                           # an evasive or unclear answer is asked again once, then marked unclear
+  recording_notice: true
+
+# The voice and brain stacks. Each list is a fallback chain: the first that has a key is used, the next takes over on errors.
+stack:
+  brain:
+    # Haiku first (owner's pick, 4 Nov): Sonnet's ~1.3 s to first token kept replies near 3 s at the caller's ear.
+    # Paid on purpose: the owner tried LFM3 on the Pro and keeps Haiku.
+    - { provider: anthropic, model: claude-haiku-5-5 }
+    - { provider: anthropic, model: claude-sonnet-5-5 }
+    - { provider: google, model: gemini-2.5-flash }
+    - { provider: inferhub, model: deepseek-v4.1-flash }
+  brain_timeout_s: 4
+  # Deepgram first (owner, 5 Nov): it streams the words while the caller talks, so the turn ends about 0.5 s sooner
+  # than Parakeet on the Pro, which only starts after they stop and sits a network hop away. The Pro stays as the backup.
+  listens:
+    - { provider: deepgram, model: nova-3 }
+    - { provider: pro-speech, stack: english-fast }
+  # A fallback chain like brain. Cartesia first again (plan upgraded 6 Nov): the Pro's shared speech server streams
+  # over the tailnet as it speaks, and on a Telnyx callback any stall there came through as choppy, radio-like
+  # gaps. The Pro takes over if Cartesia fails.
+  speaks:
+    - { provider: cartesia, model: sonic-3, speed: 1.05 }
+    - { provider: pro-speech, stack: english-fast }
+
+# What this business keeps. Every call is stored in full in Octo; these choose what else happens to it.
+records:
+  traces_content: true             # the conversation goes into the Phoenix spans, not just timings
+  publish_phone_transcripts: false # the public results page shows phone calls as numbers only; bot calls in full
+
+# Dana, the recruiter: her recorded lines for the outcome call, her voice, and her pre-written words for the demo's
+# automatic outcomes (riley/outcome.py). Riley speaks everything else in its own voice.
+dana:
+  employer: Hudson Park Health            # how she signs her emails
+  # In the demo mode the outcome call waits this long after the screen, so the caller can first ring Riley's number
+  # and ask where their application stands (the help line); then the scheduler rings with the outcome
+  ring_after_minutes: 3
+  # A second voice, distinct from Riley's. The lines are recorded once on the worker and kept on disk; with no
+  # Cartesia key the call goes on without the clip.
+  voice: { provider: cartesia, model: sonic-3, id: 156fb8d2-335b-4950-9cb3-a2d33befec77 }
+  lines:
+    next_round: Hi, it's Dana from Hudson Park. I read your screen myself, and I'd like to meet you. Riley has the details.
+    not_yet: Hi, it's Dana from Hudson Park. I read your screen myself. It's not a yes yet, and Riley has what would change that.
+    not_selected: Hi, it's Dana from Hudson Park. I read your screen myself, and Riley has the details.
+  # Riley joins the message's parts into sentences with this model; a plain template join if it fails
+  draft_model: { provider: anthropic, model: claude-haiku-5-5 }
+  # Her words when the demo decides on its own and no single item's reason fits
+  reasons:
+    flagged: This role needs every required item on the posting, and your screen showed one that isn't there yet.
+    incomplete: Your screen wasn't finished, so I can't move it forward yet. Call this number to finish it; your answers so far are kept.
+
+# Guests on /try get a call from Riley (track 9, riley/guest.py). Their number and first name are deleted after 2 days.
+guests:
+  call_in: "+1 631 709 0065"       # shown when no outbound trunk is set, so they call Riley instead
+  per_ip_hour: 3                   # sign-ups per visitor per hour
+  daily_cap: 40                    # all guest sign-ups per day (UTC), so a shared link can't run up the phone bill

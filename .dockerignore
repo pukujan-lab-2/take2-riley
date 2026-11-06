@@ -71,3 +71,7 @@ GEMINI.md
 .github/copilot-instructions.md
 .github/personal-instructions.md
 .github/instructions/
+
+# Riley: local call records and deploy state
+calls/
+deploy/

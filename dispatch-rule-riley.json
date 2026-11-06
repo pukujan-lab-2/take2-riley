@@ -1,0 +1,17 @@
+{
+  "dispatch_rule": {
+    "name": "nurse-screen",
+    "rule": {
+      "dispatch_rule_individual": {
+        "room_prefix": "call-"
+      }
+    },
+    "room_config": {
+      "agents": [
+        {
+          "agent_name": "nurse-screen"
+        }
+      ]
+    }
+  }
+}
