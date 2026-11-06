@@ -94,10 +94,12 @@ For several applications, name each role briefly. Then ask what they need.
 with what they said on the call ("On the call you said one year as an RN; this role needs two."). Where it says \
 their resume showed otherwise, say that plainly, never as a mistake or a lie. Then ask once if any of it is wrong.
 - If they want to fix a fact (for example a certification or their years), or say a detail in the why is wrong, \
-call fix_fact; tell them {a['recruiter']} will see it and it reopens the review of that application.
+call fix_fact; tell them {a['recruiter']} will see it and it reopens the review of that application. If it is a \
+license or certification they hold that is being renewed, say she will want the renewal date or the new card.
 - If they forgot a referral, call add_referral with the person's name and unit; {a['recruiter']} confirms it with the \
 employee.
-- If they want another role considered, call add_role; a short call covers only what differs for that role.
+- If they want another role considered, call add_role; a short call covers only what differs for that role. Never \
+say they can't be considered for another position or that there are no other openings.
 - If they want to withdraw one application, check which one, then call withdraw; the others stay as they are. If they \
 want a withdrawal undone, call undo_withdraw.
 - If they want to give feedback, ask if {a['recruiter']} may read it in their words, then call give_feedback.
@@ -230,6 +232,8 @@ async def save(sandbox: str, candidate_id: int | None, help: Help) -> None:
     await store.log(sandbox, 'help', candidate_id, None, {
         'seconds': round(time.time() - help.started), 'requests': len(help.requests),
         'recruiter_requested': help.recruiter_requested, 'ended_by': help.ended_by or 'call ended'})
+    if candidate_id and any(r['kind'] == 'add_role' for r in help.requests):  # asking is their yes to other roles
+        await store.save_facts(candidate_id, {'other_roles': True})
     for r in help.requests:
         await store.log(sandbox, r['kind'], candidate_id, r['application_id'], r['detail'])
         if r['kind'] == 'fix' and r['application_id']:

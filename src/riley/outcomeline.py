@@ -43,6 +43,7 @@ class Outcome:
     identity: str = 'pending'       # always checked: an outcome is only for the person it is about
     extra: list = field(default_factory=list)   # other updates due the same day, as said (riley/scheduler.py)
     retake: bool = False            # not yet or not selected: they asked to take the screen again (Riley rings back)
+    other_roles: bool = False       # they asked about other roles: kept as their consent to be considered
 
 
 def parts(message: dict) -> dict:
@@ -100,6 +101,14 @@ interviewer from the unit, and which of the open times works. Then call book_slo
 and who it is with. Only a listed time; if none works, call request_recruiter.
 - Not yet or not selected: the reason and what would change it, exactly as in the message. If the message has other \
 roles, ask if they would like to be considered; a yes calls add_role with that role's number.
+- Other roles: you never say there are no other openings, that you can't consider them, or that they can't be \
+considered for another position, even if the message says so (leave that sentence out). When they ask about other \
+roles or another position, call other_roles: offer the roles it returns (a yes calls add_role), or if it returns \
+none, say {a['recruiter']} can consider them for other roles as they open and that you have noted it.
+- If they say they hold a license or certification behind the reason and it is being renewed (renewal submitted, in \
+progress or booked), call fix_fact with that in their words, tell them {a['recruiter']} sees it and the review \
+reopens, and that she will want the renewal date or the new card. One that has already expired or lapsed still does \
+not meet the role: say what would change it, as in the message.
 - Not yet or not selected: when the message gives what they said on the call, say it back with the reason ("On the \
 call you said one year as an RN; this role needs two."), and where it says their resume showed otherwise, say that \
 plainly, never as a mistake or a lie. Then ask once whether any of it is wrong. If they say a detail is wrong, call \
@@ -120,7 +129,8 @@ class OutcomeLine(Agent):
     whole_reply = True             # and each reply stays under 60 words, its question included (screener.fit)
 
     def __init__(self, cfg: dict, state: Outcome, who: dict,
-                 booker: Callable[[int, str, str], Awaitable[dict]] = outcome.book, placed: bool = False, **kw):
+                 booker: Callable[[int, str, str], Awaitable[dict]] = outcome.book, placed: bool = False,
+                 finder: Callable[[str, int, int | None], Awaitable[list[dict]]] = outcome.other_roles, **kw):
         m = state.message
         full = instructions(cfg, m, state.language, extra=state.extra)
         step = ("Now give the message's first part in one or two sentences, then check they are with you."
@@ -129,7 +139,7 @@ class OutcomeLine(Agent):
                 'recruiter or a nurse interviewer.')
         kw['tools'] = [*kw.get('tools', []), identity.tool(self, full, step, cfg['agent']['recruiter'], self._dana)]
         super().__init__(instructions=instructions(cfg, m, state.language, hidden=True), **kw)
-        self.cfg, self.state, self.who, self.booker = cfg, state, who, booker
+        self.cfg, self.state, self.who, self.booker, self.finder = cfg, state, who, booker, finder
         self.placed = placed   # Riley rang them for this message (outcome.call_now, the scheduler), or they called in
         self.p = parts(m)
         self.offer_ids = {int(o['job_id']) for o in self.p.get('offers', []) if o.get('job_id') is not None}
@@ -213,6 +223,34 @@ class OutcomeLine(Agent):
         return 'added; a short call covers only what differs for that role. Never mention this tool.'
 
     @function_tool()
+    async def other_roles(self, context: RunContext[Outcome], role: str = '') -> str:
+        """They ask about other roles or another position, or would like to be considered for one. Finds the open
+        roles that fit what they told us; their interest is kept for the recruiter either way.
+
+        Args:
+            role: the role, unit, shift or place they asked about, in their words; empty if they did not say
+        """
+        self._ok()
+        context.userdata.other_roles = True
+        app = self.state.application
+        try:
+            found = await self.finder(self.state.message.get('sandbox') or 'live', int(app['candidate_id']),
+                                      app.get('job_id'))
+        except Exception as e:  # a lookup that fails still keeps their interest
+            print('  outcome other_roles lookup failed', type(e).__name__, e, flush=True)
+            found = []
+        found = [o for o in found if o.get('job_id') is not None]
+        self.offer_ids |= {int(o['job_id']) for o in found}
+        if found:
+            listed = '; '.join(f"[{o['job_id']}] {outcome.offer_text(o)}" for o in found[:3])
+            return (f'open roles that fit what they told us (the number is for add_role, never say it): {listed}. '
+                    'Offer them by title and place; a yes calls add_role. Never mention this tool.')
+        context.userdata.requests.append({'kind': 'add_role', 'detail': {'role': role or 'any role that fits',
+                                                                         'from': 'outcome call'}})
+        return (f"none open that fits right now. Say {self.cfg['agent']['recruiter']} can consider them for other "
+                "roles as they open and that it is noted; never say they can't be considered. Never mention this tool.")
+
+    @function_tool()
     async def retake_screen(self, context: RunContext[Outcome]) -> str:
         """They want to take the screen again (not yet or not selected only). Riley rings straight back after
         this call and asks every question afresh; the answers they gave before are cleared."""
@@ -287,6 +325,8 @@ async def save(sandbox: str, state: Outcome) -> None:
     if state.identity != 'confirmed':
         return
     await outcome.deliver(state.message['id'])
+    if state.other_roles or state.add_roles:  # asking about other roles on the call is their yes to being considered
+        await store.save_facts(int(app['candidate_id']), {'other_roles': True})
     for job_id in state.add_roles:
         await store.apply(sandbox, app['candidate_id'], job_id, source='outcome call')
     for r in state.requests:

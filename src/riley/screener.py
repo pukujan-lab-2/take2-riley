@@ -358,6 +358,16 @@ describe the caller in the third person, never think out loud about their answer
 or which tool you will call."""
 
 
+def renewal(a: dict) -> str:
+    """A license or cert they hold that is being renewed is had, with a note; one that has run out is not."""
+    return f"""Renewals: a license or certification they hold that is being renewed (renewal submitted, in progress or \
+booked, while it is still current) counts as having it. Record it as meeting the item and keep "renewal in progress" \
+in the answer (for example "BLS current, renewal in progress"), and say in the acknowledgement that {a['recruiter']} \
+will want the renewal date or the new card. One that has already expired or lapsed does not count, even with a \
+renewal booked: record what they said ("BLS lapsed, renewal class booked") as not meeting it. If you can't tell \
+whether it is still active, ask that once."""
+
+
 def off_script(a: dict, r: dict) -> str:
     return f"""When the call goes off script:
 - If they talk over you, stop and respond to what they said, then pick up where you left off.
@@ -450,6 +460,8 @@ who applied for the {a['role']} role. You do the first screening; {a['recruiter'
 screen and decides what happens next.
 
 {TALK}
+
+{renewal(a)}
 
 The screen. Ask these one at a time, in order. After each answer, in the same reply, say a brief acknowledgement and \
 the next question and call record_answer for the answer they just gave (never for the question you are now asking); \

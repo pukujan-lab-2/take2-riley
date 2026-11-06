@@ -18,7 +18,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from livekit.agents.llm import ToolError
 
-from riley import bias, guest, identity, outcome, outcomeline, store
+from riley import bias, guest, identity, octo, outcome, outcomeline, store
 from riley.main import config
 
 NOW = datetime(2026, 11, 6, 15, tzinfo=UTC)
@@ -290,3 +290,94 @@ def test_the_message_and_the_help_line_give_the_reasons_and_a_way_to_correct_the
     assert 'If any of that is wrong' in text and not outcome.check(text, p)
     why = store.why(p)
     assert 'on the call they said One year as an RN' in why and 'resume showed current ACLS' in why
+
+
+# ---- other roles: never a closed door (owner's test call, 6 Nov: "we don't currently have other openings") ----
+
+def test_a_message_with_no_other_roles_leaves_the_door_open():
+    p = parts(offers=())
+    text = outcome.template(p)
+    assert outcome.OPEN_DOOR in text and outcome.check(text, p) == []
+    # the line the draft model wrote on the owner's call is refused, so the template goes out instead
+    for closed in ["We don't currently have other openings to offer you.",
+                   "I'm sorry, we can't consider you for another position.", 'There are no other roles right now.']:
+        assert 'says no other roles' in outcome.check(f'{text} {closed}', p), closed
+    assert 'never say there are no other openings' in outcome.DRAFT
+
+
+def test_the_outcome_call_never_says_it_cannot_consider_them_for_another_role():
+    agent, state = line()
+    state.identity = 'confirmed'
+    full = outcomeline.instructions(config(), state.message, 'en')
+    assert "you never say there are no other openings, that you can't consider them" in full
+    assert 'call other_roles' in full and 'consider them for other roles as they open' in full
+    assert 'other_roles' in {t.info.name for t in agent.tools}
+
+
+def call_line(found):
+    p = parts(offers=())
+    msg = {'id': 31, 'kind': 'not_selected', 'parts': p, 'text': outcome.template(p), 'status': 'approved',
+           'sandbox': 't'}
+    state = outcomeline.Outcome(config(), msg, {'id': 7, 'candidate_id': 3, 'job_id': 5}, language='en')
+    state.identity = 'confirmed'
+    asked = []
+
+    async def finder(sandbox, candidate_id, exclude):
+        asked.append((sandbox, candidate_id, exclude))
+        return found
+    agent = outcomeline.OutcomeLine(config(), state, WHO, finder=finder)
+    tool = {t.info.name: t for t in agent.tools}
+    return agent, state, tool, asked
+
+
+async def test_asking_about_other_roles_offers_the_ones_that_fit():
+    from types import SimpleNamespace
+    _, state, tool, asked = call_line([TELE])
+    said = await tool['other_roles'](SimpleNamespace(userdata=state), 'anything on nights')
+    assert asked == [('t', 3, 5)] and 'RN, Telemetry' in said and '[12]' in said
+    await tool['add_role'](SimpleNamespace(userdata=state), 12)   # a role it found is one they can say yes to
+    assert state.add_roles == [12] and state.other_roles and not state.requests
+
+
+async def test_with_no_role_that_fits_their_interest_is_kept_for_dana():
+    from types import SimpleNamespace
+    _, state, tool, _ = call_line([])
+    said = await tool['other_roles'](SimpleNamespace(userdata=state), '')
+    assert "never say they can't be considered" in said and 'as they open' in said
+    assert state.requests == [{'kind': 'add_role', 'detail': {'role': 'any role that fits', 'from': 'outcome call'}}]
+    with pytest.raises(ToolError):
+        await tool['add_role'](SimpleNamespace(userdata=state), 99)
+
+
+def test_asking_about_other_roles_on_the_call_is_kept_as_their_yes(monkeypatch):
+    sql = []
+
+    async def query(q, params=None):
+        sql.append((q, params))
+        return [{'application_id': 7, 'kind': 'not_selected', 'sandbox': 't', 'facts': {}}]
+    monkeypatch.setattr(octo, 'query', query)
+    _, state, _, _ = call_line([])
+    state.other_roles = True
+    asyncio.run(outcomeline.save('t', state))
+    consent = [p for q, p in sql if 'consent = consent ||' in q]
+    assert consent and '"other_roles": true' in consent[0][2]
+    assert not any('answers' in q or 'score =' in q for q, _ in sql)
+
+
+def test_renewing_on_the_outcome_call_goes_to_dana_as_a_fix():
+    _, state = line()
+    full = outcomeline.instructions(config(), state.message, 'en')
+    assert 'being renewed' in full and 'renewal date or the new card' in full and 'call fix_fact' in full
+    assert 'already expired or lapsed still does not meet the role' in full
+
+
+def test_without_matching_a_missing_license_is_not_read_as_missing_years():
+    crit = [{'id': 82, 'kind': 'required', 'name': 'New York RN license'},
+            {'id': 86, 'kind': 'required', 'name': '1 year as an RN'}]
+    real = outcome.track
+    outcome.track = lambda name: None   # take2-riley before matching loaded there (the owner's call, 6 Nov)
+    try:
+        short = outcome.short_items(crit, {}, {}, {'flags': ['license: no active New York RN license']})
+    finally:
+        outcome.track = real
+    assert [c['id'] for c in short] == [82]

@@ -3,6 +3,7 @@
 twenty-six seeded jobs."""
 import random
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -133,7 +134,7 @@ def test_facts_from_a_screen():
                'pay_expectation': {'answer': 'fifty five', 'meets': 'yes'}}
     assert match.facts_from(qs, answers) == {
         'licenses': ['NY RN'], 'years': 2.5, 'units': ['med-surg', 'telemetry'], 'certs': ['BLS'],
-        'shifts': ['nights'], 'other_roles': True}
+        'renewing': [], 'shifts': ['nights'], 'other_roles': True}
     # A "no" makes the item known and missing; an unconfirmed resume answer says nothing
     no = match.facts_from(qs, {'nights': {'answer': 'no', 'meets': 'no'},
                                'years_rn': {'answer': '6 years', 'meets': 'yes', 'confirmed': False}})
@@ -143,6 +144,45 @@ def test_facts_from_a_screen():
 def test_labor_and_delivery_is_one_unit_and_negation_is_per_clause():
     assert match.found(match.UNITS, 'Two years in labor and delivery, and some peds') == ['l&d', 'peds']
     assert match.found(match.CERTS, "I have PALS and NRP, no TNCC") == ['NRP', 'PALS']
+
+
+@pytest.mark.parametrize('said, held, renewing', [
+    ('BLS current, renewal in progress', ['BLS'], ['BLS']),
+    ("Yes, I have BLS. It's in renewal, I submitted it last week", ['BLS'], ['BLS']),
+    ('BLS and ACLS, the ACLS renewal is submitted', ['ACLS', 'BLS'], ['ACLS']),
+    ('My ACLS is expiring next month, I need to renew it', ['ACLS'], ['ACLS']),
+    ('BLS lapsed last month; the renewal class is booked', [], []),
+    ("I have BLS, it expired but I'm renewing it", [], []),
+    ('ACLS expired, renewing now', [], []),
+    ('BLS current, ACLS out of date', ['BLS'], []),
+])
+def test_a_cert_being_renewed_is_held_and_one_that_ran_out_is_not(said, held, renewing):
+    assert match.found(match.CERTS, said) == held
+    assert match.renewing(match.CERTS, said) == renewing
+
+
+def test_a_renewal_in_progress_meets_the_item_and_is_marked_for_dana():
+    qs = config()['questions']
+    renewing = match.facts_from(qs, {
+        'license': {'answer': 'Yes, my New York license is in renewal, I sent it in', 'meets': 'yes'},
+        'certifications': {'answer': 'BLS current, renewal in progress', 'meets': 'yes'}})
+    assert renewing == {'licenses': ['NY RN'], 'certs': ['BLS'], 'renewing': ['BLS', 'NY RN']}
+    lapsed = match.facts_from(qs, {
+        'license': {'answer': 'it expired, I am renewing it', 'meets': 'no'},
+        'certifications': {'answer': 'BLS lapsed, renewal class booked', 'meets': 'no'}})
+    assert lapsed == {'licenses': [], 'certs': [], 'renewing': []}
+    job = {'shift': '', 'criteria': [{'kind': 'required', 'name': 'NY RN license', 'target': {'license': 'NY RN'}},
+                                     {'kind': 'required', 'name': 'current BLS', 'target': {'cert': 'BLS'}}]}
+    f = match.fit(renewing, job, job['criteria'])
+    assert f['offer'] and f['renewing'] == ['NY RN license', 'current BLS']
+    f = match.fit(lapsed, job, job['criteria'])
+    assert not f['offer'] and f['missing'] == ['NY RN license', 'current BLS'] and f['renewing'] == []
+
+
+def test_the_screen_counts_a_renewal_and_not_a_lapse():
+    text = instructions(config())
+    assert 'renewal in progress' in text and 'renewal date or the new card' in text
+    assert 'already expired or lapsed does not count' in text
 
 
 # ---- the seed ----
