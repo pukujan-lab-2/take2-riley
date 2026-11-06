@@ -70,3 +70,15 @@ def test_another_department_rechecks_experience_against_its_own_needs():
     text = instructions(icu, carried=kept)
     assert ('"telemetry"' in text and 'this role needs: ICU or other critical care' in text
             and '[license] Do you hold' not in text)
+
+
+def test_a_declined_answer_goes_to_the_recruiter_and_never_carries_over():
+    s = Screen(cfg=config())
+    for q in s.cfg['questions']:
+        s.answers[q['id']] = {'answer': 'yes', 'meets': 'yes'}
+    s.answers['pay_expectation'] = {'answer': 'chose not to say', 'meets': 'declined'}
+    card = s.scorecard()
+    assert card['declined'] == ['pay_expectation'] and 'pay_expectation' not in card['missing']
+    assert card['next_step'] == 'recruiter review: chose not to answer pay_expectation'
+    assert 'license' in carry_over(config(), {'license': {'answer': 'NY RN', 'meets': 'yes'}})
+    assert not carry_over(config(), {'license': {'answer': 'chose not to say', 'meets': 'declined'}})

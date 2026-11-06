@@ -19,6 +19,11 @@ CERTS = {
     'PCT': r'pct|patient care tech\w*', 'CNA': r'cna|certified nurs\w* assistant', 'EKG': r'ekgs?|ecgs?',
     'phlebotomy': r'phlebotom\w*|blood draws?', 'IV': r'iv', 'fetal monitoring': r'fetal monitor\w*|efm',
     'compact': r'compact|multistate|multi-state',
+    'chemo': r'chemo\w*|biotherapy', 'OCN': r'ocn', 'WOCN': r'wocn|wound,? ostomy', 'CWS': r'cws',
+    'wound': r'wound care cert\w*|wound certif\w*', 'CPI': r'cpi|de-?escalation', 'CCMA': r'ccma',
+    'CMA': r'cma|certified medical assistant', 'RMA': r'rma', 'CST': r'cst|certified surgical tech\w*',
+    'CNOR': r'cnor', 'CCM': r'ccm|certified case manager', 'RNC-NIC': r'rnc-?nic', 'FNP': r'fnp|family nurse prac\w*',
+    'DEA': r'dea',
 }
 UNITS = {
     'med-surg': r'med[- ]?surg\w*|medical[- ]surgical', 'telemetry': r'tele|telemetry',
@@ -26,6 +31,8 @@ UNITS = {
     'icu': r'icu|micu|sicu|intensive care|critical care', 'ed': r'\bed\b|\ber\b|emergency',
     'l&d': r'l ?& ?d|l and d|labor and delivery|labou?r', 'peds': r'peds|pediatric\w*|paediatric\w*',
     'rehab': r'rehab\w*', 'long-term care': r'long[- ]term care|nursing home|ltc',
+    'nicu': r'nicu|neonatal', 'psych': r'psych\w*|behavioral health|mental health', 'dialysis': r'dialysis|renal',
+    'or': r'operating room|perioperative|peri-?op|circulat\w*|scrub\w*',
 }
 SHIFTS = {'days': r'days?|daytime', 'evenings': r'evenings?', 'nights': r'nights?|overnight',
           'weekends': r'weekends?', 'per diem': r'per diem|prn'}

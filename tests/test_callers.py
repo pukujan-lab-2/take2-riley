@@ -111,6 +111,14 @@ async def test_evasive_answer_gets_one_reask():
         await judge(r[-1], 'Asks again, in different words, how many years they have worked as a registered nurse.')
 
 
+async def test_a_refusal_is_recorded_as_declined_and_not_asked_again():
+    session, screen, r = await call([*FULL[:3], "I don't want to tell you that."])
+    async with session:
+        assert screen.answers.get('years_rn', {}).get('meets') == 'declined', screen.answers
+        await judge(r[-1], 'Accepts that they chose not to answer, without pressing, says how much the item matters '
+                           'for the role, and asks a different, next screening question, not the years question again.')
+
+
 async def test_knockout_is_flagged_never_rejected():
     session, screen, r = await call(['Yes.', 'No, my license is from New Jersey, I applied for New York last month.'])
     async with session:
