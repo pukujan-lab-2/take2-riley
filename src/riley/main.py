@@ -328,7 +328,8 @@ async def entrypoint(ctx: JobContext):
             'language': screen.language,
             'latency': latency(history), 'transcript': [
                 {'role': i['role'], 'text': ' '.join(c for c in i.get('content', []) if isinstance(c, str)),
-                 'interrupted': i.get('interrupted', False)}
+                 'interrupted': i.get('interrupted', False),
+                 'at': round(i['created_at'] - screen.started, 1) if i.get('created_at') else None}
                 for i in history if i.get('type') == 'message' and i.get('role') in ('user', 'assistant')],
         }
         (CALLS / f'{ctx.room.name}.json').write_text(json.dumps(record, indent=2))
