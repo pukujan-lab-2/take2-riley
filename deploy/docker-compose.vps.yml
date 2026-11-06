@@ -38,6 +38,32 @@ services:
       driver: json-file
       options: { max-size: 20m, max-file: "5" }
 
+  # The candidate intake page (src/riley_web): resume upload and parsing into a visitor's sandbox. No host port:
+  # nurse-screen-web passes riley.design-bakery.com/intake and /api/intake/* to it over octo_internal (INTAKE_URL).
+  web:
+    image: take2-riley:${TAG:-dev}
+    container_name: take2-riley-web
+    restart: unless-stopped
+    working_dir: /app/src
+    command: ["/app/.venv/bin/python", "-m", "riley_web.server"]
+    env_file: /home/ubuntu/apps/nurse-screen.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8091"
+      COMMIT: ${TAG:-dev}
+      OCTO_URL: http://octo-api:3001/api
+    networks:
+      octo: {}
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+
 networks:
   # The Pro speech relay (socat on 172.17.0.1:18799) only accepts 172.16.0.0/12; nurse-screen has 172.16.42.0/24
   default:

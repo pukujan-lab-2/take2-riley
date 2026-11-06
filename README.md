@@ -11,6 +11,11 @@ people back when they ask, or when they sign up on [riley.design-bakery.com/try]
   DeepSeek, Deepgram ears, Cartesia voice, each with a fallback), Octo store and Phoenix traces.
 - `AGENT_NAME=nurse-screen`: the number's dispatch rule (`dispatch-rule-riley.json`) and outbound calls name it.
 - Simulations: `AGENT_PROFILE=riley AGENT_NAME=nurse-screen lk agent simulate text --scenarios scenarios-riley.yaml`.
+- Candidate intake: `src/riley_web/` serves riley.design-bakery.com/intake (nurse-screen-web passes it here). Drop
+  resumes (PDF, docx, text, an application .eml, a job board CSV) and `src/intake/` parses them into prefilled answers
+  in your own sandbox, which Riley then confirms on the call. Try it with the files in `samples/`. Locally:
+  `cd src && uv run python -m riley_web.server`, then open http://127.0.0.1:8091/intake.
+- `scripts/sync_riley.py ~/dev/projects/nurse-screen` brings over the latest Riley and intake code from nurse-screen.
 - Tests: `uv run pytest tests` (the caller tests call the real model chain and a Claude judge).
 - Runs on the VPS as Komodo stack `take2-riley` (`deploy/`); merging to `main` deploys it within about 3 minutes.
   The web pages (`/tracker`, `/console`, `/try`, `/deck`) stay in the nurse-screen repo.

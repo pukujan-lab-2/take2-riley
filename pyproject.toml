@@ -25,6 +25,9 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http==1.45.2",
     "opentelemetry-sdk==1.45.2",
     "pyyaml==6.0.3",
+    # The candidate intake page (src/riley_web, src/intake): resumes as PDF and docx
+    "pypdf==7.0.0",
+    "python-docx==1.2.0",
 ]
 
 [dependency-groups]
@@ -55,7 +58,7 @@ markers = ["paid: calls live models and costs money; skipped unless pytest runs 
 line-length = 88
 target-version = "py311"
 # Riley's code came from pukujan-lab-2/nurse-screen and keeps that repo's style (single quotes, 120 columns)
-extend-exclude = ["src/riley", "tests"]
+extend-exclude = ["src/riley", "src/intake", "src/riley_web", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "B", "A", "C4", "UP", "SIM", "RUF"]
