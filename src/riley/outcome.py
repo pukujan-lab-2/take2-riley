@@ -16,6 +16,7 @@ How outcomes run is one setting per sandbox (`settings`, key `outcome_mode`):
 Every ring goes through `approve()` or `call_now()`, so no draft is ever rung, and every ring writes an event.
 Nothing here changes an answer or a score.
 """
+import contextlib
 import html
 import json
 import os
@@ -144,16 +145,43 @@ def offer_text(o: dict) -> str:
     return ', '.join(str(b) for b in bits if b)
 
 
+# Which screen answer speaks to each kind of criterion (riley/match.py targets); a shift is the answer named after it
+ANSWER_FOR = {'license': ('license',), 'cert': ('certifications',), 'years': ('years_rn',),
+              'unit': ('acute_care', 'units'), 'units': ('acute_care', 'units')}
+
+
+def said_for(criterion: dict, answers: dict, resume: dict) -> dict:
+    """For one item that fell short: `heard`, what they said on the call about it, word for word as recorded, so the
+    reason is theirs and not a form line; and `resume_differs` when their resume met it but the call did not, the
+    contradiction they are asked to settle (the review reopens if the resume is right)."""
+    target = criterion.get('target') or {}
+    if len(target) != 1:
+        return {'heard': '', 'resume_differs': False}
+    (kind, want), = target.items()
+    keys = ((re.sub(r'[^a-z0-9]+', '_', str(want).lower()).strip('_'), 'nights', 'days', 'shift')
+            if kind == 'shift' else ANSWER_FOR.get(kind, ()))
+    got = next((answers[k] for k in keys if isinstance(answers.get(k), dict) and answers[k].get('value')), None)
+    heard = str(got['value']) if got else ''
+    on_resume = 'unknown'
+    match = track('match')
+    if match and resume:
+        with contextlib.suppress(Exception):
+            on_resume = match._item(resume, target)[0]
+    return {'heard': heard, 'resume_differs': bool(got and got.get('meets') == 'no' and on_resume == 'met')}
+
+
 def parts_for(result: str, reason: str, criteria: list[dict], offers: list[dict], job: dict, name: str,
-              cfg: dict, now: datetime | None = None, tz: str = 'America/New_York') -> dict:
+              cfg: dict, now: datetime | None = None, tz: str = 'America/New_York', answers: dict | None = None,
+              resume: dict | None = None) -> dict:
     """Everything the message may say, each from a record: Dana's result and reason, her words for each item that fell
-    short, the other roles from matching, the job's options, her open times, and the next step with its date."""
+    short with what they said about it on the call (and whether their resume said otherwise), the other roles from
+    matching, the job's options, her open times, and the next step with its date."""
     if result not in KINDS:
         raise ValueError(f'result must be one of {KINDS}')
     now = now or datetime.now(UTC)
     dana = cfg.get('dana', {})
     items = [{'id': c.get('id'), 'name': c.get('name'), 'reason': c.get('reason') or '',
-              'change': c.get('change') or ''}
+              'change': c.get('change') or '', **said_for(c, answers or {}, resume or {})}
              for c in criteria]
     slots = slot_list(job.get('slots'), now, tz) if result == 'next_round' else []
     if result == 'next_round':
@@ -228,8 +256,16 @@ def template(parts: dict, first_person: bool = False) -> str:
                           f'{who} has decided not to move forward with this one.'))
         if p['reason']:
             out.append(p['reason'])
-        out += [i['reason'] for i in p['items'] if i['reason'] and i['reason'] not in p['reason']]
+        for i in p['items']:
+            if i.get('heard') and i.get('resume_differs'):
+                out.append(f"Your resume showed {i['name']}, but on the call you said: {i['heard']}.")
+            elif i.get('heard'):
+                out.append(f"On the call you said: {i['heard']}.")
+            if i['reason'] and i['reason'] not in p['reason']:
+                out.append(i['reason'])
         out += [i['change'] for i in p['items'] if i['change']]
+        if any(i.get('heard') for i in p['items']):
+            out.append('If any of that is wrong, tell us on this number and the review reopens.')
         if p['offers']:
             roles = '; '.join(offer_text(o) for o in p['offers'])
             out.append(f'Another role fits what you told us: {roles}. Say yes and you are considered for it too.')
@@ -242,9 +278,12 @@ def template(parts: dict, first_person: bool = False) -> str:
 
 DRAFT = """You write one short outcome message from a hospital recruiter's assistant to a nurse applicant. \
 Join the parts below into natural, warm, plain sentences, in this order: the result, the reason, what would change \
-it, the other roles, how to give feedback or ask a person to review, and the next step. Use only the facts in the \
-parts: add no role, unit, certification, hospital, day, date, time or number that is not in them, and keep the \
-recruiter's reason and change in her own words. No greeting line, no sign-off, no lists. Under 110 words.
+it, the other roles, how to give feedback or ask a person to review, and the next step. For each item, give the \
+reason with what they said on the call ("heard", in their words); where "resume_differs" is true, say plainly that \
+their resume showed it but the call did not, never as a mistake or a lie. When any item has "heard", end the reason \
+with one sentence that if any of it is wrong they can say so on this number and the review reopens. Use only the \
+facts in the parts: add no role, unit, certification, hospital, day, date, time or number that is not in them, and \
+keep the recruiter's reason and change in her own words. No greeting line, no sign-off, no lists. Under 110 words.
 
 Parts (JSON):
 """
@@ -396,7 +435,7 @@ def track(name: str):
     """Another track's module (match: track 5, outbound: track 9), or None until it has merged."""
     import importlib
     try:
-        return importlib.import_module(f'agent.{name}')
+        return importlib.import_module(f'.{name}', __package__)  # agent.match here, riley.match in take2-riley
     except ImportError:
         return None
 
@@ -459,7 +498,10 @@ async def decide(sandbox: str, application_id: int, result: str, reason: str, cr
     tz = app.get('timezone') or 'America/New_York'
     job = {'title': app['title'], 'location': app['location'], 'hospital': app.get('hospital'),
            'slots': _load(app.get('slots')), 'options': _load(app.get('options'))}
-    parts = parts_for(result, reason, crit, offers, job, app.get('name') or '', cfg, now, tz)
+    resumes = await octo.query('select facts from resumes where candidate_id = $1 order by at desc limit 1',
+                               [app['candidate_id']])
+    parts = parts_for(result, reason, crit, offers, job, app.get('name') or '', cfg, now, tz,
+                      answers=_load(app.get('answers')) or {}, resume=_load(resumes[0]['facts']) if resumes else {})
     text, how = await draft(parts, cfg)
     parts['drafted_by'] = how
     decision = {'result': result, 'reason': reason, 'criteria': list(criteria_ids or []), 'by': by,

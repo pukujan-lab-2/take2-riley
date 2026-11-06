@@ -3,8 +3,9 @@
 Same order every time: the name and role check (riley/identity.py), nothing before a yes; then Dana's recorded line in
 her own voice; then Riley gives the message in short turns. Next round: Riley offers the listed times, with Dana or a
 nurse interviewer, and `book_slot` books only one of those. Not yet or not selected: the reason, what would change it,
-the other roles in the message (a yes adds that application), feedback, a person to review, and a second go at the
-screen (`retake_screen`: the answers are cleared and Riley rings straight back to screen it afresh).
+the other roles in the message (a yes adds that application), what they said behind each reason with a chance to
+correct it (`fix_fact`: the review reopens), feedback, a person to review, and a second go at the screen
+(`retake_screen`: the answers are cleared and Riley rings straight back to screen it afresh).
 
 It never edits an answer, a score or a decision; a retake clears them so the next screen starts over. The message is
 marked delivered at the end of a call in which the caller confirmed it was them.
@@ -19,7 +20,7 @@ from typing import Literal
 from livekit.agents import Agent, RunContext, function_tool
 from livekit.agents.llm import ToolError
 
-from . import identity, octo, outbound, outcome, store
+from . import identity, outbound, outcome, store
 from .screener import NO_LABELS, Screener, say
 
 LANGS = {'en': 'English', 'es': 'Spanish'}
@@ -99,6 +100,10 @@ interviewer from the unit, and which of the open times works. Then call book_slo
 and who it is with. Only a listed time; if none works, call request_recruiter.
 - Not yet or not selected: the reason and what would change it, exactly as in the message. If the message has other \
 roles, ask if they would like to be considered; a yes calls add_role with that role's number.
+- Not yet or not selected: when the message gives what they said on the call, say it back with the reason ("On the \
+call you said one year as an RN; this role needs two."), and where it says their resume showed otherwise, say that \
+plainly, never as a mistake or a lie. Then ask once whether any of it is wrong. If they say a detail is wrong, call \
+fix_fact with what is right in their words; tell them {a['recruiter']} sees it and the review reopens.
 - Not yet or not selected, once the reason is given: offer once to run the screen again, in one sentence ("If you'd \
 like, you can take the screen again now: I'll hang up and call you straight back."). A yes calls retake_screen; then \
 say you are calling right back, say goodbye and call end_call.
@@ -230,6 +235,19 @@ class OutcomeLine(Agent):
         return 'kept. Never mention this tool.'
 
     @function_tool()
+    async def fix_fact(self, context: RunContext[Outcome], item: str, now_says: str) -> str:
+        """The caller says a detail behind the decision is wrong (what they said on the call, or what was recorded).
+        Sent to the recruiter, and the review of this application reopens.
+
+        Args:
+            item: what the detail is about, e.g. ACLS or years as an RN
+            now_says: what they say is right, in their words
+        """
+        self._ok()
+        context.userdata.requests.append({'kind': 'fix', 'detail': {'item': item, 'now_says': now_says}})
+        return 'sent to the recruiter; the review reopens. Never mention this tool.'
+
+    @function_tool()
     async def request_recruiter(self, context: RunContext[Outcome], reason: str) -> str:
         """The caller wants a person to look at it again, or to talk to one.
 
@@ -273,6 +291,8 @@ async def save(sandbox: str, state: Outcome) -> None:
         await store.apply(sandbox, app['candidate_id'], job_id, source='outcome call')
     for r in state.requests:
         await store.log(sandbox, r['kind'], app['candidate_id'], app['id'], r['detail'])
+    if any(r['kind'] == 'fix' for r in state.requests):
+        await store.reopen(app['id'])
     if state.retake:
         await retake(sandbox, app)
 
@@ -280,8 +300,7 @@ async def save(sandbox: str, state: Outcome) -> None:
 async def retake(sandbox: str, app: dict) -> dict:
     """A second go at the same screen: the answers, score and decision are cleared and the application is back to
     applied, so the call Riley places now screens it afresh. Logged, so the tracker shows it was retaken."""
-    await octo.query("update applications set answers = '{}'::jsonb, score = null, decision = null, "
-                     "status = 'applied', updated = now() where id = $1", [app['id']])
+    await store.restart_screen(app['id'])
     # A /try guest is screened as a guest again (made-up name and role); anyone else as a callback on their number
     meta = {'mode': 'guest' if app.get('guest') else 'callback', 'candidate_id': int(app['candidate_id']),
             'application_id': int(app['id'])}
