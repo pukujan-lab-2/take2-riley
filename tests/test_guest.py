@@ -24,7 +24,7 @@ hours = st.floats(min_value=0, max_value=24 * 7, allow_nan=False)
 
 
 def ok(**kw):
-    args = {'now': NOW, 'consent': True, 'phone': PHONE, 'number_calls': [], 'ip_calls': [], 'today': 0, 'cfg': CFG}
+    args = {'now': NOW, 'consent': True, 'phone': PHONE, 'ip_calls': [], 'today': 0, 'cfg': CFG}
     return guest.refuse(**{**args, **kw})
 
 
@@ -34,13 +34,12 @@ def test_a_fresh_request_goes_ahead():
 
 @given(phone=st.text(max_size=20), calls=st.lists(hours, max_size=5), today=st.integers(0, 1000))
 def test_no_call_without_the_checkbox(phone, calls, today):
-    assert ok(consent=False, phone=phone, number_calls=[NOW - timedelta(hours=h) for h in calls], today=today)
+    assert ok(consent=False, phone=phone, ip_calls=[NOW - timedelta(hours=h) for h in calls], today=today)
 
 
-@given(ago=hours)
-def test_a_number_is_called_at_most_once_a_day(ago):
-    why = ok(number_calls=[NOW - timedelta(hours=ago)])
-    assert (why is not None) == (ago < guest.NUMBER_HOURS)
+def test_a_number_asking_again_is_not_refused():
+    # its earlier demo is replaced by retire() instead
+    assert ok() is None and 'number_calls' not in guest.refuse.__code__.co_varnames
 
 
 def test_visitor_and_daily_limits():
@@ -171,7 +170,8 @@ async def test_spanish_switches_the_instructions_and_the_line_names_who_they_pla
     spoken = []
     session = SimpleNamespace(say=spoken.append)
     result = await tool2(SimpleNamespace(userdata=state, session=session), 'Spanish')
-    assert state.language == 'es' and switched == ['es'] and seen[0].endswith(guest_call.SPANISH)
+    assert state.language == 'es' and switched == ['es'] and agent2.lang == 'es'
+    assert guest_call.NOTE not in seen[0]  # the guest note goes once the demo line is said
     # The code says who they play, in their language, and the model adds nothing to that turn
     assert spoken == ['Para esta demostración, usted es Jordan Lee y solicita el puesto de RN, ICU en '
                       'Hudson Park Midtown. ¿Es correcto?']
@@ -180,3 +180,19 @@ async def test_spanish_switches_the_instructions_and_the_line_names_who_they_pla
     await tool(SimpleNamespace(userdata=english, session=session), 'en')
     assert english.language == 'en'
     assert spoken[-1] == "For this demo you're Jordan Lee, applying for RN, ICU at Hudson Park Midtown. Is that right?"
+
+
+async def test_a_switch_mid_call_carries_on_and_english_switches_back():
+    # The owner's call, 7 Nov: Spanish mid-screen replayed the demo line, and English never switched back
+    switched = []
+    agent = Screener(CFG, demo=DEMO, on_language=switched.append)
+    tool = next(t for t in agent.tools if t.info.name == 'set_language')
+    spoken = []
+    ctx = SimpleNamespace(userdata=Screen(cfg=CFG), session=SimpleNamespace(say=spoken.append))
+    await tool(ctx, 'en')
+    assert len(spoken) == 1 and switched == []
+    later = await tool(ctx, 'es')
+    assert len(spoken) == 1 and 'never start over' in str(later).lower()
+    assert agent.instructions.endswith(guest_call.SPANISH) and switched == ['es']
+    await tool(ctx, 'en')
+    assert guest_call.SPANISH not in agent.instructions and switched == ['es', 'en'] and len(spoken) == 1
