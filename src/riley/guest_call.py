@@ -16,7 +16,7 @@ SPANISH = """
 Language: the caller chose Spanish. From now on, reply only in Spanish, every sentence, including the goodbye. Every \
 acknowledgement carries the next question in the same reply ("Gracias. ¿Cuántos años lleva como enfermera?"), never \
 "Gracias." alone. Tool results are notes for you, never for the caller: never say, read or translate them, and never \
-say a question id. Tool arguments stay in English."""
+say a question id. Tool arguments stay in English. If they ask for English again, call set_language with en."""
 
 
 def greeting(cfg: dict, outbound: bool) -> str:
@@ -30,30 +30,35 @@ def greeting(cfg: dict, outbound: bool) -> str:
 
 
 def language_tool(agent, full_instructions: str | None, who: dict | None, on_switch=None):
-    """set_language for a screen. Spanish adds the Spanish rule to Riley's instructions (the Screener keeps it in every
-    later update) and, where the voice stack can, switches listening and speaking (on_switch). On a guest call
-    (`who`, `full_instructions`) the result is the demo line to say once; on any other call, go on with the screen."""
+    """set_language for a screen, both ways and as often as the caller asks. Spanish adds the Spanish rule to Riley's
+    instructions and English takes it out (the Screener does both in every update), and listening and speaking switch
+    with it (on_switch). On a guest call (`who`, `full_instructions`) the first call says the demo line once; a later
+    switch goes on from the current question, never from the start (the owner's call, 7 Nov, restarted)."""
     @function_tool()
     async def set_language(context: RunContext, lang: str) -> str | ToolResult:
-        """The caller said which language they want for this call, or is speaking Spanish.
+        """The caller said which language they want for this call, or is speaking Spanish, or wants English again.
 
         Args:
             lang: 'en' for English or 'es' for Spanish
         """
         lang = 'es' if lang.lower().startswith(('es', 'sp')) else 'en'
+        was = getattr(agent, 'lang', 'en')
         context.userdata.language = agent.lang = lang
         print('  language     ', lang, flush=True)
-        if lang == 'es':
-            await agent.update_instructions((full_instructions or agent.instructions) + SPANISH)
-            if on_switch:
-                on_switch(lang)
+        first = bool(who) and not getattr(agent, 'introduced', False)
+        # The guest note (language first, then the demo line) only holds until that line is said
+        await agent.update_instructions(full_instructions if first and full_instructions else agent.instructions)
+        if on_switch and lang != was:
+            on_switch(lang)
         name = 'Spanish' if lang == 'es' else 'English'
-        if who:
+        if first and who:
+            agent.introduced = True
             # The code says who they play: the model skipped it in 1 of 4 guest calls (hard callers, 6 Nov)
             line = intro(who, lang)
             context.session.say(line)
             return ToolResult(f'set, and you said: "{line}" Wait for their answer.', reply_required=False)
-        return f'set. Go on with the screen in {name}: say or ask again the current question. Never mention this tool.'
+        return (f'set. Carry on in {name} from where the call is: ask the current question again in {name}. Never '
+                'start over, never say again who they play. Never mention this tool.')
     return set_language
 
 

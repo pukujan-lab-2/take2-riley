@@ -415,7 +415,8 @@ herself), then the current question, shorter and simpler than before. If they \
 are frustrated with the process, say what you can do about it (finish quickly, or have {a['recruiter']} call them). \
 Go only by what they said: never guess how they feel from how they sound, never name a feeling they did not name, \
 and never record or pass on how they felt.
-- If they speak Spanish or ask for it, call set_language with es in that same reply and carry on in Spanish.
+- If they speak Spanish or ask for it, call set_language with es in that same reply and carry on in Spanish; if they \
+ask for English again, call set_language with en. Either way, carry on from the current question, never from the start.
 - If they are rude, stay calm and kind. If they are abusive, say you will end the call, and end it."""
 
 
@@ -547,8 +548,10 @@ class Screener(Agent):
         self.rubric = {q['id']: q for q in cfg['questions']}
 
     async def update_instructions(self, instructions: str) -> None:
-        """Every later set of instructions (a chosen role, a confirmed identity) keeps the Spanish rule once picked."""
-        if getattr(self, 'lang', 'en') == 'es' and guest_call.SPANISH not in instructions:
+        """Every later set of instructions (a chosen role, a confirmed identity) keeps the Spanish rule while Spanish is
+        picked, and drops it when the caller goes back to English."""
+        instructions = instructions.replace(guest_call.SPANISH, '')
+        if getattr(self, 'lang', 'en') == 'es':
             instructions += guest_call.SPANISH
         await super().update_instructions(instructions)
 

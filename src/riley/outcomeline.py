@@ -12,18 +12,27 @@ marked delivered at the end of a call in which the caller confirmed it was them.
 """
 import contextlib
 import json
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from livekit.agents import Agent, RunContext, function_tool
 from livekit.agents.llm import ToolError
 
-from . import identity, outbound, outcome, store
+from . import identity, octo, outbound, outcome, store
 from .screener import NO_LABELS, Screener, say
 
 LANGS = {'en': 'English', 'es': 'Spanish'}
+# An automated greeting, not the person: the result call to a guest on 6 Nov reached "The call has been forwarded to
+# voicemail... At the tone, please record your message." and was never tried again
+VOICEMAIL = re.compile(r'voice ?mail|mailbox|record your message|leave (a|your) message|at the tone|'
+                       r'after the (tone|beep)|(is|are) not available|can(not|\'t) take your call|'
+                       r'buzón|deje (su|un) mensaje', re.I)
+TRIES = 3                  # result calls per message before it waits for them to call in
+RETRY_DEMO = timedelta(minutes=5)   # the demo mode tries again soon; other modes the next allowed time, 2 h later
 
 
 @dataclass
@@ -40,6 +49,7 @@ class Outcome:
     went_quiet: int = 0
     checking_in: bool = False
     ended_by: str = ''
+    voicemail: bool = False         # an automated greeting answered, not the person
     identity: str = 'pending'       # always checked: an outcome is only for the person it is about
     extra: list = field(default_factory=list)   # other updates due the same day, as said (riley/scheduler.py)
     retake: bool = False            # not yet or not selected: they asked to take the screen again (Riley rings back)
@@ -83,6 +93,10 @@ Other roles in the message (the number in brackets is for tools, never say it):
 
 How you talk: every reply is spoken. One or two short sentences. Warm and plain. Never say which tool you are calling.
 
+If a voicemail or another recorded greeting answers instead of a person, wait for the tone, say only "Hi, this is \
+{a['name']} from {a['employer']} about your application. I'll try you again soon, or you can call us back." and \
+call end_call. Never leave anything about the application or its outcome on a recording.
+
 {facts}"""
     return f"""You are {a['name']}, an AI assistant for {a['employer']} nursing recruitment, on a live phone call with \
 a nurse who applied. {a['recruiter']}, the recruiter, made a decision on their application and approved a message for \
@@ -91,6 +105,10 @@ message. {speak}
 
 How you talk: every reply is spoken. One or two short sentences, no lists or symbols. Warm and plain. Never say which \
 tool you are calling.
+
+If a voicemail or another recorded greeting answers instead of a person, wait for the tone, say only "Hi, this is \
+{a['name']} from {a['employer']} about your application. I'll try you again soon, or you can call us back." and \
+call end_call. Never leave anything about the application or its outcome on a recording.
 
 {facts}
 
@@ -314,14 +332,32 @@ async def lookup(sandbox: str, number: str, metadata: str | None) -> tuple[dict,
     return m, await outcome.application(m['application_id'])
 
 
+def retry_due(tries: int, mode: str, now: datetime, tz: str) -> datetime | None:
+    """When to ring again for a result nobody heard (voicemail, no answer, hung up before saying who they are), or None
+    after TRIES calls: then it waits for them to call in, where it is still given."""
+    if tries >= TRIES:
+        return None
+    return now + RETRY_DEMO if mode == 'immediate' else outcome.next_allowed(now + timedelta(hours=2), tz)
+
+
 async def save(sandbox: str, state: Outcome) -> None:
     """After the call: delivered if they confirmed it was them, any added roles, and one event per request. Never
-    answers or score."""
+    answers or score. A result the person never heard is rung again later (retry_due)."""
     app = state.application
     await store.log(sandbox, 'outcome_call', app['candidate_id'], app['id'], {
         'message_id': state.message['id'], 'identity': state.identity, 'booked': state.booked,
         'seconds': round(time.time() - state.started), 'recruiter_requested': state.recruiter_requested,
-        'ended_by': state.ended_by or 'call ended', 'language': state.language})
+        'ended_by': 'voicemail' if state.voicemail else state.ended_by or 'call ended', 'language': state.language})
+    if state.identity == 'pending' and outcome.can_deliver(await outcome.message(int(state.message['id']))):
+        tries = await octo.query("select count(*) as n from events where kind = 'outcome_call' and "
+                                 "detail->>'message_id' = $1", [str(state.message['id'])])
+        mode = await outcome.get_mode(sandbox)
+        due = retry_due(int(tries[0]['n']) if tries else TRIES, mode, datetime.now(UTC),
+                        app.get('timezone') or 'America/New_York')
+        if due:
+            await store.log(sandbox, 'outcome_queued', app['candidate_id'], app['id'],
+                            {'message_id': state.message['id'], 'mode': mode, 'retry': True,
+                             'why': 'voicemail' if state.voicemail else 'not reached'}, due=due)
     if state.identity != 'confirmed':
         return
     await outcome.deliver(state.message['id'])

@@ -18,7 +18,6 @@ from . import match, octo, store
 
 SANDBOX = 'live'
 KEEP_DAYS = 2           # the form promises "my number is deleted after 2 days"
-NUMBER_HOURS = 24       # one call per number per day
 # Plain made-up full names, none a real public person; the guest plays this person on the call
 NAMES = ['Jordan Lee', 'Sam Rivera', 'Alex Morgan', 'Casey Brooks', 'Taylor Reyes', 'Morgan Ellis', 'Jamie Park',
          'Riley Quinn', 'Avery Shah', 'Drew Castillo', 'Robin Okafor', 'Jesse Lin', 'Quinn Alvarez', 'Kai Bennett',
@@ -40,18 +39,16 @@ def e164(key: str) -> str:
     return f'+1{key}'
 
 
-def refuse(now: datetime, consent: bool, phone: str | None, number_calls: list[datetime],
-           ip_calls: list[datetime], today: int, cfg: dict) -> str | None:
-    """Why this request may not go ahead, or None. `number_calls` are earlier guest sign-ups for this number,
-    `ip_calls` this visitor's, `today` all guest sign-ups since midnight UTC. No call without the checkbox; a
-    number at most once per 24 hours; a few per visitor per hour; a daily cap from screen.yaml."""
+def refuse(now: datetime, consent: bool, phone: str | None, ip_calls: list[datetime], today: int,
+           cfg: dict) -> str | None:
+    """Why this request may not go ahead, or None. `ip_calls` are this visitor's guest sign-ups, `today` all guest
+    sign-ups since midnight UTC. No call without the checkbox; a few per visitor per hour; a daily cap from
+    screen.yaml. A number asking again is not refused: its earlier demo is replaced (retire())."""
     g = cfg.get('guests', {})
     if not consent:
         return 'Please tick the box so Riley may call you.'
     if not us_mobile(phone):
         return 'That does not look like a US mobile number.'
-    if any(now - t < timedelta(hours=NUMBER_HOURS) for t in number_calls):
-        return 'This number already had a demo call today. Try again tomorrow.'
     if sum(now - t < timedelta(hours=1) for t in ip_calls) >= g.get('per_ip_hour', 3):
         return 'A few demos from here already this hour. Try again later.'
     if today >= g.get('daily_cap', 40):
@@ -204,10 +201,12 @@ async def _job(cfg: dict) -> dict:
     return await store.job_for(SANDBOX, cfg)
 
 
-async def recent(key: str, since: datetime) -> list[datetime]:
-    rows = await octo.query("select created from candidates where sandbox = $1 and guest->>'phone' = $2 "
-                            'and created > $3', [SANDBOX, key, since])
-    return [t for r in rows if (t := store.ts(r['created']))]
+async def retire(key: str) -> int:
+    """A number asking for another demo replaces its earlier one: the old guest candidates lose the number (kept as
+    replaced_phone until the purge), so the new sign-up is the only application that number has."""
+    rows = await octo.query("update candidates set guest = (guest - 'phone') || jsonb_build_object('replaced_phone', "
+                            "guest->>'phone') where sandbox = $1 and guest->>'phone' = $2 returning id", [SANDBOX, key])
+    return len(rows)
 
 
 async def today(now: datetime) -> int:

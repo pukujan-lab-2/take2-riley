@@ -259,6 +259,13 @@ async def entrypoint(ctx: JobContext):
           ' > '.join(v['provider'] for v in stack['listens']), 'voice',
           ' > '.join(v['provider'] for v in stack['speaks']), flush=True)
 
+    if out:
+        @session.on('user_input_transcribed')
+        def _greeting(ev):
+            # A result call that reaches a recorded greeting is rung again later (outcomeline.save)
+            if ev.is_final and outcomeline.VOICEMAIL.search(ev.transcript or ''):
+                out.voicemail = True
+
     @session.on('user_state_changed')
     def _quiet(ev):
         # Only silences in a row count: a caller who paused once early and once much later was hung up on at the
@@ -418,7 +425,11 @@ async def entrypoint(ctx: JobContext):
         # Deepgram and Cartesia switch language mid-call; the Pro switches to its multilingual stack (Kokoro's
         # Spanish voice), loaded now so the swap runs while Riley thinks of the reply
         for part in [*ears, *chain_v]:
-            if isinstance(part, (deepgram.STT, cartesia.TTS)):
+            # Spanish listening is Nova-3's multilingual mode, so "English, please" still gets through and the caller
+            # can switch back (the owner's call, 7 Nov: Spanish-only listening heard one word in 45 s)
+            if isinstance(part, deepgram.STT):
+                part.update_options(language='multi' if lang == 'es' else 'en')
+            elif isinstance(part, cartesia.TTS):
                 part.update_options(language=lang)
             elif isinstance(part, (ProSpeechSTT, ProSpeechTTS)):
                 part.switch(lang)

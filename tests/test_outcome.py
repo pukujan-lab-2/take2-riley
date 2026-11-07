@@ -9,6 +9,7 @@
 - a job in "Dana confirms every no" never gets an automatic no, and Dana's email links to the optional bias form.
 """
 import asyncio
+import contextlib
 import html
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -381,3 +382,63 @@ def test_without_matching_a_missing_license_is_not_read_as_missing_years():
     finally:
         outcome.track = real
     assert [c['id'] for c in short] == [82]
+
+
+@pytest.mark.parametrize('heard', ['The call has been forwarded to voicemail.',
+                                   'At the tone, please record your message.',
+                                   'The person you are calling is not available.', 'Deje su mensaje después del tono.'])
+def test_a_recorded_greeting_is_known(heard):
+    assert outcomeline.VOICEMAIL.search(heard)
+
+
+@pytest.mark.parametrize('heard', ['Yes, this is Priya.', 'Hello?', 'Who is this?', 'Sí, soy yo.'])
+def test_a_person_is_not_a_recorded_greeting(heard):
+    assert not outcomeline.VOICEMAIL.search(heard)
+
+
+def test_a_recording_never_hears_the_outcome():
+    _, state = line()
+    for hidden in (True, False):
+        text = outcomeline.instructions(config(), state.message, 'en', hidden=hidden)
+        assert 'recorded greeting' in text and 'Never leave anything about the application' in text
+
+
+def test_a_result_nobody_heard_is_rung_again_then_waits_for_them():
+    now = datetime(2026, 11, 6, 15, tzinfo=UTC)
+    assert outcomeline.retry_due(1, 'immediate', now, 'America/New_York') == now + outcomeline.RETRY_DEMO
+    later = outcomeline.retry_due(2, 'daytime', now, 'America/New_York')
+    assert later and later >= now + timedelta(hours=2)
+    assert outcomeline.retry_due(outcomeline.TRIES, 'immediate', now, 'America/New_York') is None
+
+
+@pytest.mark.parametrize('identity_said, voicemail, queued', [('pending', True, True), ('pending', False, True),
+                                                              ('confirmed', False, False), ('not_them', False, False)])
+def test_voicemail_queues_one_more_try_but_never_for_the_wrong_person(monkeypatch, identity_said, voicemail, queued):
+    logged = []
+
+    async def query(q, params=None):
+        if 'from messages' in q:
+            return [{'id': 31, 'status': 'approved', 'sandbox': 't'}]
+        if 'count(*)' in q:
+            return [{'n': 1}]
+        return []
+
+    async def log(sandbox, kind, candidate_id, application_id, detail, due=None):
+        logged.append((kind, detail, due))
+
+    async def mode(sandbox):
+        return 'immediate'
+    monkeypatch.setattr(octo, 'query', query)
+    monkeypatch.setattr(store, 'log', log)
+    monkeypatch.setattr(outcome, 'get_mode', mode)
+    monkeypatch.setattr(outcome, 'deliver', lambda *a: asyncio.sleep(0))
+    _, state = line()
+    state.identity, state.voicemail = identity_said, voicemail
+    with contextlib.suppress(Exception):   # a confirmed call goes on to deliver, which this test does not cover
+        asyncio.run(outcomeline.save('t', state))
+    call = next(d for k, d, _ in logged if k == 'outcome_call')
+    assert call['ended_by'] == ('voicemail' if voicemail else 'call ended')
+    again = [(d, due) for k, d, due in logged if k == 'outcome_queued']
+    assert bool(again) == queued
+    if queued:
+        assert again[0][0]['why'] == ('voicemail' if voicemail else 'not reached') and again[0][1]
