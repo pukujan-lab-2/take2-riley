@@ -70,6 +70,11 @@ class Tenant:
         return f'Dana ({self.key})'
 
 
+def secure(request: web.Request) -> bool:
+    """Whether a cookie set on this reply is marked Secure: everywhere but this machine's own http (localhost)."""
+    return request.host.split(':')[0] not in ('localhost', '127.0.0.1') or request.secure
+
+
 def _error(status: int, message: str) -> web.HTTPException:
     cls = {401: web.HTTPUnauthorized, 403: web.HTTPForbidden, 400: web.HTTPBadRequest, 429: web.HTTPTooManyRequests}
     return cls[status](text=json.dumps({'error': message}), content_type='application/json')

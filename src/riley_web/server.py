@@ -57,7 +57,8 @@ async def intake_sandbox(request, what: str = 'hire') -> str:
 def intake_reply(sandbox: str, body, status: int = 200) -> web.Response:
     resp = web.json_response(body, status=status, dumps=lambda o: json.dumps(o, default=str))
     if rules.is_guest(sandbox):  # keeps the demo cookie alive; an org's key never goes in a cookie
-        resp.set_cookie(SANDBOX_COOKIE, sandbox, max_age=30 * 86400, httponly=True, samesite='Lax')
+        resp.set_cookie(SANDBOX_COOKIE, sandbox, max_age=30 * 86400, httponly=True, samesite='Lax',
+                        secure=True, path='/')
     return resp
 
 
