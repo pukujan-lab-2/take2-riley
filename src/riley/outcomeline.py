@@ -330,7 +330,8 @@ async def lookup(sandbox: str, number: str, metadata: str | None) -> tuple[dict,
         m = await outcome.pending(sandbox, who['id']) if who else None
     if not m:
         return None
-    return m, await outcome.application(m['application_id'])
+    app = await outcome.application(m['application_id'])
+    return outcome.with_fresh_slots(m, app), app
 
 
 def retry_due(tries: int, mode: str, now: datetime, tz: str) -> datetime | None:
