@@ -245,3 +245,23 @@ def test_intake_and_the_tracker_share_one_guest_cookie():
     # The tracker stays in pukujan-lab-2/nurse-screen (web/tracker/api.py COOKIE); its web server proxies /intake here
     from riley_web import server
     assert server.SANDBOX_COOKIE == "ns_guest"
+
+
+def test_a_question_is_required_when_a_no_misses_a_required_item():
+    """The job page's Screening tab shows Required from this (intake/load.py required): a knockout, a required
+    criterion that names the question, or one whose target is what a yes tells us."""
+    rn = {'kind': 'required', 'name': 'New York RN license', 'target': {'license': 'NY RN'}}
+    bls = {'kind': 'required', 'name': 'current BLS', 'target': {'cert': 'BLS'}}
+    nights = {'kind': 'weighted', 'name': 'nights', 'target': {'shift': 'nights'}}
+    by_id = {'kind': 'required', 'name': 'Telemetry', 'target': {'question': 'tele'}}
+    criteria = [rn, bls, nights, by_id]
+    assert all(load.required(q, []) for q in QUESTIONS if q.get('knockout') or q.get('knockout_if'))
+    assert load.required({'id': 'lic', 'ask': 'Your license?', 'fact': {'license': 'NY RN'}}, criteria)
+    assert load.required({'id': 'c', 'ask': 'Certs?', 'fact': {'certs': ['ACLS', 'BLS']}}, criteria)
+    assert load.required({'id': 'tele', 'ask': 'Telemetry?'}, criteria)
+    # a posted job's question says what it asks about, with no fact
+    assert load.required({'id': 'bls', 'ask': 'Is your BLS card current?'}, criteria)
+    # a weighted item is not required; nor is a question about something else
+    assert not load.required({'id': 'n', 'ask': 'Nights ok?', 'fact': {'shift': 'nights'}}, criteria)
+    assert not load.required({'id': 'why', 'ask': 'Why this hospital?'}, criteria)
+    assert not load.required({'id': 'blsx', 'ask': 'Do you like tables?', 'fact': {'cert': 'wound'}}, criteria)

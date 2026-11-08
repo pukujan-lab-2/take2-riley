@@ -374,6 +374,32 @@ async def migrate() -> None:
     await octo.query(SCHEMA)
     await platform_sessions()
     await org_columns()
+    await move_old_try_rows()
+
+
+# Before decision 0023, /try guests were written into Hudson Park's `live` org. Their rows belong in `try`.
+OLD_TRY = ("select c.id from candidates c where c.sandbox = 'live' and (c.guest is not null "
+           "or exists (select 1 from events e where e.candidate_id = c.id and e.kind = 'guest') "
+           "or exists (select 1 from resumes r where r.candidate_id = c.id and r.source = 'guest'))")
+
+
+async def move_old_try_rows() -> int:
+    """Move the /try guests written into `live` before decision 0023 to the `try` sandbox: the person, their
+    applications, events, messages and summaries. Their jobs stay Hudson Park's, as a /try guest's do now. Looks
+    first, so a start with nothing left to move writes nothing. Returns how many people moved."""
+    people = [r['id'] for r in await octo.query(OLD_TRY, [])]
+    if not people:
+        return 0
+    apps = 'select id from applications where candidate_id = any($1)'
+    for sql in ("update events set sandbox = 'try' where sandbox = 'live' and (candidate_id = any($1) "
+                f'or application_id in ({apps}))',
+                f"update messages set sandbox = 'try' where sandbox = 'live' and application_id in ({apps})",
+                f"update summaries set sandbox = 'try' where sandbox = 'live' and application_id in ({apps})",
+                "update applications set sandbox = 'try' where sandbox = 'live' and candidate_id = any($1)",
+                "update candidates set sandbox = 'try' where sandbox = 'live' and id = any($1)"):
+        await octo.query(sql, [people])
+    print('moved', len(people), 'old /try guests from live to try', flush=True)
+    return len(people)
 
 
 async def platform_sessions() -> None:

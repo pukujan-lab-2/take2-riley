@@ -3,6 +3,7 @@
 Everything goes through riley/store.py into one sandbox. Importing the same resume twice writes nothing the second
 time; a changed resume becomes a new version on the same application, which keeps its applied date (rule 9).
 """
+import re
 from pathlib import Path
 
 import yaml
@@ -42,7 +43,43 @@ async def jobs(sandbox: str) -> list[dict]:
         "(select coalesce(json_agg(c order by c.id), '[]') from criteria c where c.job_id = j.id) as criteria "
         'from jobs j left join hospitals h on h.id = j.hospital_id where j.sandbox = $1 '
         "order by j.status = 'draft' desc, j.created desc", [sandbox])
-    return [{**r, 'criteria': _j_load(r['criteria']) or [], 'description': _j_load(r.get('description'))} for r in rows]
+    out = []
+    for r in rows:
+        criteria = _j_load(r['criteria']) or []
+        questions = [{**q, 'required': required(q, criteria)} for q in _j_load(r.get('questions')) or []]
+        out.append({**r, 'criteria': criteria, 'questions': questions, 'description': _j_load(r.get('description'))})
+    return out
+
+
+def _words(v) -> set[str]:
+    items = v if isinstance(v, list) else [v]
+    return {re.sub(r'[^a-z0-9]+', ' ', str(i).lower()).strip() for i in items if i}
+
+
+def required(question: dict, criteria: list[dict]) -> bool:
+    """Whether a "no" to this question misses a required item: the question is a knockout, or a required criterion
+    names it (its target's `question`, or its name as the id), or what a yes tells us (`fact`) is that criterion's
+    target: the same license, a cert among its certs, the same shift or unit. A posted job's questions carry no `fact`,
+    so there a cert or license criterion counts when the question asks about it by name."""
+    if question.get('knockout') or question.get('knockout_if'):
+        return True
+    qid, ask = question.get('id') or '', ' ' + re.sub(r'[^a-z0-9]+', ' ', (question.get('ask') or '').lower()) + ' '
+    fact: dict = question['fact'] if isinstance(question.get('fact'), dict) else {}
+    for c in criteria:
+        if c.get('kind') != 'required':
+            continue
+        target = _j_load(c.get('target')) or {}
+        if qid and (target.get('question') == qid or re.sub(r'[^a-z0-9]+', '_', str(c.get('name', '')).lower())
+                    .strip('_') == qid):
+            return True
+        for key in ('license', 'cert', 'shift', 'unit'):
+            if key in target and (_words(target[key]) & _words(fact.get(key) or fact.get(f'{key}s'))):
+                return True
+        if not fact:
+            for key in ('license', 'cert'):
+                if any(w and f' {w} ' in ask for w in _words(target.get(key))):
+                    return True
+    return False
 
 
 async def target_job(sandbox: str, job_id: int | None) -> dict:
