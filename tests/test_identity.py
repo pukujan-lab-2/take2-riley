@@ -96,3 +96,31 @@ def test_a_call_they_make_still_opens_with_thanks_for_calling():
     for hello in (greeting(cfg), Screener(cfg, who=WHO).opening(), helpline.HelpLine(cfg, ROWS, who=WHO).opening(),
                   agent.opening()):
         assert hello and hello.startswith(f"Hi, thanks for calling {cfg['agent']['employer']}")
+
+
+# ---- an email for a phone applicant (docs/decisions/0027-apply-page.md) ----
+
+def test_riley_asks_a_caller_with_no_email_for_one_and_never_a_guest():
+    from riley.screener import contact_note, spelled
+    cfg = config()
+    note = contact_note(cfg['agent'])
+    assert note.strip() in Screener(cfg, ask_email=True).instructions
+    assert note.strip() not in Screener(cfg).instructions
+    assert note.strip() not in Screener(cfg, ask_email=True, demo={'name': 'Jordan Lee', 'title': 'RN, ICU',
+                                                                     'hospital': 'Hudson Park Midtown'}).instructions
+    assert spelled('rosa.diaz-2@gmail.com') == 'R O S A dot D I A Z dash 2, at gmail dot com'
+
+
+async def test_save_contact_keeps_a_whole_address_or_a_text_instead():
+    from types import SimpleNamespace
+    cfg = config()
+    agent = Screener(cfg, ask_email=True)
+    tool = next(t for t in agent.tools if t.info.name == 'save_contact')
+    state = Screen(cfg=cfg)
+    with pytest.raises(ToolError):
+        await tool(SimpleNamespace(userdata=state), 'rosa at gmail')
+    assert state.contact == {}
+    said = await tool(SimpleNamespace(userdata=state), ' Rosa.Diaz@Gmail.com ')
+    assert state.contact == {'email': 'rosa.diaz@gmail.com'} and 'R O S A dot D I A Z, at gmail dot com' in said
+    await tool(SimpleNamespace(userdata=state), '', True)
+    assert state.contact == {'texts': True}

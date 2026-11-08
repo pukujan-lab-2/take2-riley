@@ -403,6 +403,7 @@ async def entrypoint(ctx: JobContext):
                     # someone else on their phone, or nothing said: the record is left as it was
                 elif app:
                     await store.save_answers(app['id'], screen.answers, record['scorecard'], screen.prefilled)
+                    await _contact(app['candidate_id'])
                     await _callback(app['candidate_id'], app['id'])
                     await _matches(app['candidate_id'])
                     decided = await _auto(app['id'])
@@ -412,6 +413,7 @@ async def entrypoint(ctx: JobContext):
                     new = await store.save_new_caller(home, number, cfg, screen.answers, record['scorecard'],
                                                       job_id=screen.job['id'] if screen.job else None)
                     print('new caller stored as application', new['id'], flush=True)
+                    await _contact(new['candidate_id'])
                     await _callback(new['candidate_id'], new['id'])
                     await _matches(new['candidate_id'])
                     await _auto(new['id'])
@@ -419,6 +421,15 @@ async def entrypoint(ctx: JobContext):
                 print('application update failed', app['id'] if app else number, e, flush=True)
         if traces:
             traces.force_flush()
+
+    async def _contact(candidate_id: int):
+        # An email given at the end of the screen, or a text with a link asked for instead (riley/screener.py)
+        if not getattr(screen, 'contact', None) or demo:
+            return
+        try:
+            await store.save_contact(home, candidate_id, screen.contact)
+        except Exception as e:  # the screen is saved already; this never undoes it
+            print('contact save failed', type(e).__name__, e, flush=True)
 
     async def _auto(application_id: int) -> dict | None:
         # 'immediate' mode (the demo): Dana's pre-written outcome is decided, approved and rung at once
@@ -507,7 +518,9 @@ async def entrypoint(ctx: JobContext):
         placed = 'callback' if callback else 'screen' if meta.get('mode') == 'screen' else None
         agent = (helpline.HelpLine(cfg, rows, help.tz, who=who, placed=placed, tools=[end]) if help else
                  Screener(cfg, greeting_audio=greeting_audio, prefilled=prefilled, carried=carried, who=who,
-                          jobs=jobs, on_language=_language, placed=placed, tools=[end]))
+                          jobs=jobs, on_language=_language, placed=placed, tools=[end],
+                          # a phone applicant with no email is asked for one, so they can use their page
+                          ask_email=source == 'phone' and not (app or {}).get('email')))
 
     # The starter's noise cancellation: background noise and other voices are removed before Deepgram hears them
     await session.start(agent=agent, room=ctx.room, room_options=room_io.RoomOptions(
