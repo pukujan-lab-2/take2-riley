@@ -2,9 +2,11 @@
 
   python3 scripts/sync_riley.py ~/dev/projects/nurse-screen [ref]     (ref defaults to origin/main)
 
-Copies agent/ to src/riley/, intake/ to src/intake/, web/intake/index.html to src/riley_web/intake.html, screen.yaml,
-jobs/ and the tests already here, then: paths one folder deeper, imports
-from `riley`, and riley/main.py hosted by src/agent.py with the starter's turn detector and noise cancellation.
+Copies agent/ to src/riley/, intake/ to src/intake/, web/session.py and web/tracker/rules.py to src/riley_web/ (so
+the intake API resolves the console's sign-in exactly as nurse-screen does), screen.yaml, jobs/ and the tests already
+here, then: paths one folder deeper, imports from `riley`, and riley/main.py hosted by src/agent.py with the starter's
+turn detector and noise cancellation. src/riley_web/intake.html is no longer synced: nurse-screen retired its
+web/intake page for the console's Jobs screen (nurse-screen #84) and only proxies /api/intake/* here.
 Fails loudly when a change no longer applies, so a reworked main.py is looked at by hand.
 """
 import io
@@ -15,6 +17,9 @@ import tarfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parents[1]
+# nurse-screen's web files the intake API here needs as they are: who a request is (the console's session or the demo
+# cookie) and the rules it rests on. Their imports of agent/ and web/tracker/ become riley/ and riley_web/
+WEB = {'web/session.py': 'session.py', 'web/tracker/rules.py': 'rules.py'}
 
 MAIN = [
     ('"""The phone worker: LiveKit sends each call to the number (or a browser test room) here as agent `nurse-screen`.',
@@ -82,7 +87,7 @@ def apply(text: str, pairs, name: str) -> str:
 
 def main():
     src, ref = Path(sys.argv[1]).expanduser(), sys.argv[2] if len(sys.argv) > 2 else 'origin/main'
-    raw = subprocess.run(['git', '-C', str(src), 'archive', ref, 'agent', 'intake', 'web/intake', 'screen.yaml', 'jobs',
+    raw = subprocess.run(['git', '-C', str(src), 'archive', ref, 'agent', 'intake', *WEB, 'screen.yaml', 'jobs',
                           'tests'],
                          check=True, capture_output=True).stdout
     tests = {p.name for p in (HERE / 'tests').glob('*.py')} - {'test_agent.py'}
@@ -96,8 +101,8 @@ def main():
                 out = HERE / 'src' / 'riley' / rest
             elif top == 'intake' and rest.endswith('.py'):
                 out = HERE / 'src' / 'intake' / rest
-            elif m.name == 'web/intake/index.html':
-                out = HERE / 'src' / 'riley_web' / 'intake.html'
+            elif m.name in WEB:
+                out = HERE / 'src' / 'riley_web' / WEB[m.name]
             elif top == 'tests' and '/' not in rest and rest in tests:
                 out = HERE / 'tests' / rest
             elif m.name == 'screen.yaml' or top == 'jobs':
@@ -106,7 +111,7 @@ def main():
                 continue
             text = data.decode()
             text = re.sub(r'agent/([a-z_]+)\.py', r'riley/\1.py', text)
-            if top in ('agent', 'intake'):
+            if top in ('agent', 'intake') or m.name in WEB:
                 text = re.sub(r'from agent(\.| import)', r'from riley\1', text)
                 text = text.replace('from web.tracker import rules', 'from riley_web import rules')
                 text = text.replace('ROOT = Path(__file__).resolve().parent.parent', 'ROOT = Path(__file__).resolve().parents[2]')

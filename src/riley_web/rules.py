@@ -40,11 +40,74 @@ def visible(row_sandbox: str, guest: str) -> bool:
     return row_sandbox in (guest, LIVE)
 
 
-def can_write(row_sandbox: str, guest: str, action: str) -> bool:
-    """A guest changes their own sandbox, or decides on a live record. Nothing else, ever."""
+def can_write(row_sandbox: str, guest: str, action: str, staff: bool = False) -> bool:
+    """A guest changes their own sandbox, or decides on a live record. Nothing else, ever. A signed-in member of an
+    org (`staff`, whose key came from their session on the server) changes only their own org's rows."""
+    if staff:
+        return bool(guest) and row_sandbox == guest
     if not is_guest(guest):
         return False
     return row_sandbox == guest or (row_sandbox == LIVE and action in DECISIONS)
+
+
+# ---- tenancy: who reads and writes what (docs/decisions/0022-auth-and-tenancy.md) ----
+
+ORG_KEY = re.compile(r'org_\d+')
+ROLES = ('admin', 'recruiter', 'interviewer')
+# What each kind of signed-in person may open. `guest` is the demo workspace, which shows every screen on made-up data
+ALLOWED = {
+    'hire': frozenset({'admin', 'recruiter', 'guest'}),                  # applicants, decisions, messages, reports
+    'interview': frozenset({'admin', 'recruiter', 'interviewer', 'guest'}),  # interviews and their scorecards
+    'platform': frozenset({'admin', 'recruiter', 'guest'}),              # calls, traces, health, setup
+    'portal': frozenset({'candidate', 'guest'}),                         # a candidate's own applications
+    'invite': frozenset({'admin', 'recruiter'}),                         # never in the demo: it has no real people
+}
+LINK_LIMITS = {'email': (3, 15), 'ip': (10, 60)}  # at most this many sign-in links per (minutes)
+
+
+def scope_of(key: str, guest: bool) -> list[str]:
+    """The sandboxes a tenant reads. A guest: their own and `live` (numbers masked, as on the demo since day one).
+    A signed-in org member or candidate: their org's rows only, never another's and never a guest's."""
+    return [key, LIVE] if guest and key != LIVE else [key]
+
+
+def readable(row_sandbox: str, scope: list[str]) -> bool:
+    return row_sandbox in scope
+
+
+def allowed(role: str | None, what: str) -> bool:
+    return role in ALLOWED.get(what, ())
+
+
+def may_invite(inviter: str | None, role: str) -> bool:
+    """An admin invites recruiters and interviewers; a recruiter invites interviewers. Nobody invites an admin: the
+    one who made the org is its admin."""
+    return (inviter == 'admin' and role in ('recruiter', 'interviewer')) or (inviter == 'recruiter'
+                                                                             and role == 'interviewer')
+
+
+def too_many_links(by_email: int, by_ip: int) -> bool:
+    """Links already asked for in the window, for this address and from this IP: one more would pass the limit."""
+    return by_email >= LINK_LIMITS['email'][0] or by_ip >= LINK_LIMITS['ip'][0]
+
+
+def sign(value: str, secret: str) -> str:
+    """`value.mac` with an HMAC-SHA256 of the value, for a cookie the browser holds but can't make up."""
+    return f'{value}.{hmac.new(secret.encode(), value.encode(), hashlib.sha256).hexdigest()}'
+
+
+def unsign(signed: str | None, secret: str) -> str | None:
+    """The value of a signed cookie, or None when it is missing, malformed or signed with another secret."""
+    value, _, mac = (signed or '').rpartition('.')
+    if not value or not mac or not secret:
+        return None
+    good = hmac.new(secret.encode(), value.encode(), hashlib.sha256).hexdigest()
+    return value if hmac.compare_digest(mac.encode(), good.encode()) else None
+
+
+def digest(token: str) -> str:
+    """What the database keeps of a sign-in link or a session id: its SHA-256, never the thing itself."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def admin_token(key: str | None) -> str:
@@ -91,7 +154,10 @@ def items(questions: list[dict], answers: dict) -> list[dict]:
         out.append({'id': q['id'], 'ask': q.get('ask', q['id']),
                     'required': bool(q.get('knockout') or q.get('knockout_if')),
                     'answer': scrub(str(a['value'])) if 'value' in a else None, 'meets': a.get('meets'),
-                    'confirmed': a.get('confirmed', True) if a else None, 'source': a.get('source')})
+                    'confirmed': a.get('confirmed', True) if a else None, 'source': a.get('source'),
+                    # the resume said it in other words than the job's, and the caller was asked (riley/guest.py gap)
+                    'resume': scrub(str(a['resume'])) if a.get('resume') else None, 'needs': a.get('needs'),
+                    'earlier': [scrub(str(e.get('answer', ''))) for e in a.get('earlier', [])]})
     return out
 
 

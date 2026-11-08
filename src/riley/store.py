@@ -196,6 +196,72 @@ create table if not exists job_postings (
   removed_at timestamptz
 );
 create index if not exists job_postings_job on job_postings (job_id, board);
+
+-- Sign-in and tenancy (docs/decisions/0022-auth-and-tenancy.md). An employer is an org; its `key` is the `sandbox`
+-- value every one of its rows carries. Hudson Park Health, whose rows were always 'live', is the org with key 'live';
+-- a new org gets 'org_<id>'; the demo stays a visitor's own 'guest-…' sandbox with no org. Only added tables and
+-- columns, so the rows already in the workspace keep working as they are.
+create table if not exists orgs (
+  id bigserial primary key,
+  key text not null unique,                 -- the sandbox its rows carry
+  name text not null,
+  created timestamptz not null default now()
+);
+insert into orgs (key, name) values ('live', 'Hudson Park Health') on conflict (key) do nothing;
+create table if not exists users (
+  id bigserial primary key,
+  email text not null unique,               -- lower-cased; the only way in is a link to it
+  name text,
+  created timestamptz not null default now(),
+  last_seen timestamptz
+);
+create table if not exists memberships (
+  id bigserial primary key,
+  user_id bigint not null references users(id),
+  org_id bigint not null references orgs(id),
+  role text not null check (role in ('admin', 'recruiter', 'interviewer')),
+  invited_by bigint references users(id),
+  created timestamptz not null default now(),
+  unique (user_id, org_id)
+);
+-- A candidate who signed in to one employer's page by a link to the email on their applications. Their
+-- applications are always found again by that email inside that org; candidate_ids is what matched last time.
+create table if not exists candidate_accounts (
+  id bigserial primary key,
+  org_id bigint not null references orgs(id),
+  email text not null,
+  candidate_ids jsonb not null default '[]',
+  created timestamptz not null default now(),
+  last_seen timestamptz,
+  unique (org_id, email)
+);
+-- Sign-in links. Only a SHA-256 of the token is kept; the token itself is only in the email. Single use, 15 minutes.
+create table if not exists login_tokens (
+  id bigserial primary key,
+  hash text not null unique,
+  email text not null,
+  purpose text not null check (purpose in ('signup', 'login', 'invite', 'candidate')),
+  org_id bigint references orgs(id),
+  detail jsonb not null default '{}',       -- signup {name, org}; invite {name, role, invited_by}
+  ip text,
+  expires timestamptz not null,
+  used timestamptz,
+  created timestamptz not null default now()
+);
+create index if not exists login_tokens_email on login_tokens (email, created);
+create index if not exists login_tokens_ip on login_tokens (ip, created);
+-- A signed-in browser. The cookie holds a random id and its HMAC; only a SHA-256 of the id is kept here, so a copy
+-- of this table signs nobody in. Signing out sets revoked.
+create table if not exists sessions (
+  hash text primary key,
+  kind text not null check (kind in ('staff', 'candidate')),
+  user_id bigint references users(id),
+  candidate_account_id bigint references candidate_accounts(id),
+  org_id bigint not null references orgs(id),
+  created timestamptz not null default now(),
+  expires timestamptz not null,
+  revoked timestamptz
+);
 """
 _migrated = False
 
@@ -276,6 +342,7 @@ def _j(v):
 
 
 async def migrate() -> None:
+    await octo.migrate()  # calls and eval_runs first: the web app reads calls.sandbox before any call is saved
     await octo.query(SCHEMA)
 
 

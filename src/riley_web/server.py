@@ -7,8 +7,10 @@ workspace, never `live`. When that candidate calls, Riley confirms what the resu
 (riley/main.py, store.for_call). A pasted job post is drafted by Claude (src/intake/jobpost.py) and stays a draft
 until confirmed. Sample files to try it with are in samples/.
 
-riley.design-bakery.com is served by nurse-screen-web, which passes /intake and /api/intake/* here (INTAKE_URL), so
-the page, its cookie and the nav to the other pages stay on one site.
+riley.design-bakery.com is served by nurse-screen-web, which passes /api/intake/* here (INTAKE_URL) with its cookies,
+so the console's Jobs screen imports into whoever is asking: a signed-in org's own sandbox (its `ns_session`) or the
+demo guest's (`ns_guest`), worked out by riley_web/session.py, nurse-screen's web/session.py synced as it is. With
+neither cookie every intake API answers 401, as nurse-screen's own do (its docs/decisions/0022-auth-and-tenancy.md).
 
 Run:  uv run python -m riley_web.server      (from src/; HOST and PORT, default 127.0.0.1:8091)
 """
@@ -23,12 +25,12 @@ from aiohttp import BodyPartReader, web
 
 from intake import extract, jobpost, load
 from riley import keys, store
-from riley_web import turnstile
+from riley_web import rules, session, turnstile
 
 keys.load()
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-SANDBOX_COOKIE = 'ns_guest'  # the tracker's guest cookie (nurse-screen web/tracker/api.py COOKIE): one sandbox for both
+SANDBOX_COOKIE = session.GUEST  # the tracker's guest cookie (nurse-screen web/tracker/api.py COOKIE): one sandbox for both
 DRAFTS: dict[str, list[float]] = {}
 MAX_FILES = 50
 
@@ -42,16 +44,20 @@ async def intake_page(_):
     return web.FileResponse(HERE / 'intake.html')
 
 
-async def intake_sandbox(request) -> str:
-    sandbox = load.visitor_sandbox(request.cookies.get(SANDBOX_COOKIE))
+async def intake_sandbox(request, what: str = 'hire') -> str:
+    """The sandbox this request works in: the signed-in org's key or the demo guest's own, from the cookies only,
+    never from the request's body. Nobody signed in and no demo cookie: 401; an interviewer: 403."""
+    tenant = await session.need(request, what)
     await store.ensure()
-    await load.touch_sandbox(sandbox)
-    return sandbox
+    if tenant.guest:
+        await load.touch_sandbox(tenant.key)
+    return tenant.key
 
 
 def intake_reply(sandbox: str, body, status: int = 200) -> web.Response:
     resp = web.json_response(body, status=status, dumps=lambda o: json.dumps(o, default=str))
-    resp.set_cookie(SANDBOX_COOKIE, sandbox, max_age=30 * 86400, httponly=True, samesite='Lax')
+    if rules.is_guest(sandbox):  # keeps the demo cookie alive; an org's key never goes in a cookie
+        resp.set_cookie(SANDBOX_COOKIE, sandbox, max_age=30 * 86400, httponly=True, samesite='Lax')
     return resp
 
 

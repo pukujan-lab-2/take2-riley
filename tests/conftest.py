@@ -11,8 +11,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
-# Each test file's results from this run, saved to eval_runs at the end so /results shows tests over time. With them,
-# for the console's Checks page: each test's seconds, a failure's message, and each judge verdict (evals.judge.LOG)
+# Each test file's results from this run, saved to eval_runs at the end so the console's Evals shows them over time.
+# Also, for the Checks page: each test's seconds, a failure's message, and each judge verdict (evals.judge.LOG)
 RESULTS: dict[str, dict[str, bool]] = {}
 EXTRA: dict[str, dict[str, dict]] = {}
 STARTED = time.time()

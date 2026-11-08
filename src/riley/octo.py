@@ -43,6 +43,9 @@ create table if not exists eval_runs (
 );
 create index if not exists calls_started on calls (started desc);
 create index if not exists eval_runs_at on eval_runs (at desc);
+-- Whose call it was: the org key (riley/store.py orgs). Every call so far rang Hudson Park's number, so 'live'.
+alter table calls add column if not exists sandbox text not null default 'live';
+create index if not exists calls_sandbox on calls (sandbox, started desc);
 """
 _migrated = False
 
@@ -70,11 +73,12 @@ async def migrate() -> None:
     await query(SCHEMA)
 
 
-async def save_call(record: dict, source: str, public_transcript: bool) -> None:
+async def save_call(record: dict, source: str, public_transcript: bool, sandbox: str = 'live') -> None:
+    """One call's record. `sandbox` is the org whose number was rung; one number today, Hudson Park's ('live')."""
     cols = ['room', 'source', 'started', 'seconds', 'commit', 'ended_by', 'scorecard', 'answers', 'caller_questions',
-            'recruiter_requested', 'callback', 'latency', 'transcript', 'brain_chain', 'public_transcript']
+            'recruiter_requested', 'callback', 'latency', 'transcript', 'brain_chain', 'public_transcript', 'sandbox']
     values = {**record, 'source': source, 'public_transcript': public_transcript,
-              'commit': os.environ.get('COMMIT', 'dev')}
+              'commit': os.environ.get('COMMIT', 'dev'), 'sandbox': sandbox}
     params = [json.dumps(values[c]) if isinstance(values[c], (dict, list)) else values[c] for c in cols]
     marks = ', '.join(f'to_timestamp(${i})' if c == 'started' else f'${i}' for i, c in enumerate(cols, 1))
     updates = ', '.join(f'{c} = excluded.{c}' for c in cols[1:])

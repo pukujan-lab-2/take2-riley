@@ -53,7 +53,7 @@ the screen questions all live in [`screen.yaml`](screen.yaml), so you can change
 | Path | What it is |
 |---|---|
 | `src/riley_agent.py`, `src/riley/` | Riley itself: the call, scoring, help line, follow-up calls, scheduler |
-| `src/riley_web/`, `src/intake/` | The intake page: upload resumes, an application email or a job board CSV, and they become prefilled answers |
+| `src/riley_web/`, `src/intake/` | The intake API behind the console's Jobs screen: upload resumes, an application email or a job board CSV, and they become prefilled answers in the asker's own sandbox. Who is asking (a signed-in org or the demo guest) comes from `riley_web/session.py`, synced from nurse-screen |
 | `screen.yaml` | The job, the questions, the models and what gets stored |
 | `scenarios-riley.yaml` | Simulated difficult callers that test Riley end to end |
 | `tests/` | Unit and caller tests |
@@ -87,7 +87,8 @@ Run the simulated callers:
 AGENT_PROFILE=riley AGENT_NAME=nurse-screen lk agent simulate text --scenarios scenarios-riley.yaml
 ```
 
-Open the intake page at http://127.0.0.1:8091/intake:
+Open the intake page at http://127.0.0.1:8091/intake (its API answers 401 until the browser has a demo or sign-in
+cookie from nurse-screen's console):
 
 ```bash
 cd src && uv run python -m riley_web.server
