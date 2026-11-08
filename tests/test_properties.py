@@ -12,7 +12,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from riley import guest_call, helpline, outcomeline, seed, store
+from riley import guest_call, helpline, match, outcomeline, seed, store
 from riley.main import config
 from riley.pro_speech import SPEAKS_SPANISH, ProSpeechTTS, stack_for
 from riley.screener import (
@@ -24,6 +24,7 @@ from riley.screener import (
     Screen,
     Screener,
     after_tool,
+    choosing,
     fit,
     instructions,
     just_confirmed,
@@ -202,14 +203,20 @@ def test_lines_that_claim_to_know_a_feeling_are_never_spoken(line):
 
 @pytest.mark.parametrize('line', ['Let me continue in Spanish.', "I'll continue in English.",
                                   'Switching to Spanish now.', "So I'll confirm that now.",
-                                  "Yes, you're the person on file and this is about the role."])
+                                  "Yes, you're the person on file and this is about the role.",
+                                  'Ask which in a few words, in Spanish.', 'Say so in a few words.',
+                                  'Creo que ella quiere el puesto de enfermera registrada de Medicina-Cirugía, así que '
+                                  'voy a registrarlo así.', 'Ella eligió el puesto de noche.',
+                                  "Night nursing at Midtown matches several roles, so I'll check which ones fit."])
 def test_saying_the_language_switch_is_never_spoken(line):
     # "Let me continue in Spanish." came out in English on a Spanish guest call (hard callers, 6 Nov)
     assert unsayable(line) == 'narration'
 
 
 @pytest.mark.parametrize('line', ["That's hard to hear.", "It's fair to ask.", 'Gracias. ¿Cuántos años lleva como '
-                                  'enfermera?', 'How many years have you worked as an RN?', 'I hear you.'])
+                                  'enfermera?', 'How many years have you worked as an RN?', 'I hear you.',
+                                  'Could you tell me in a few words what you did there?',
+                                  'Tell them you heard from me.'])
 def test_plain_lines_are_spoken(line):
     assert unsayable(line) == ''
 
@@ -408,3 +415,15 @@ def test_a_line_said_inside_a_longer_one_is_a_repeat(words):
     longer = same(f"I'll pass that along, and Dana will call you back {words}.")
     assert repeats(same('Dana will call you back.'), {longer})
     assert not repeats(same('Thanks.'), {same('Thanks for that, Ana.')})
+
+
+def test_words_that_fit_several_roles_go_through_find_roles_whose_roles_may_then_be_named():
+    # "El puesto de enfermería de noche en Midtown." fit more than one role; Riley named them without find_roles,
+    # every try was dropped and it never left the role question (Spanish bot call, 7 Nov)
+    text = ' '.join(choosing(CFG['agent'], JOBS).split())
+    assert 'fit more than one ("night nursing at Midtown"), call find_roles' in text
+    assert 'ask which in a few words' not in text
+    picks = match.suggest({'shifts': ['nights']}, JOBS, 'Midtown')
+    assert picks and all('Midtown' in j['hospital'] for j in picks)
+    offer = ' o '.join(f"{j['title']} en {j['hospital']}" for j in picks) + '.'
+    assert stray_roles(offer, JOBS, {j['id'] for j in picks}) == set()

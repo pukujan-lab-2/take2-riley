@@ -39,7 +39,15 @@ NARRATION = re.compile(
     # "Yes, you're the person on file and this is about the role, so I'll confirm that now." (no_show, 6 Nov)
     r"identity check|confirm_identity|before i go (any )?further|(i'll|i will|let me) confirm (that|this) now|"
     r"you're the person on file)\b|"
-    r"^(they|caller) (gave|answered|said|mentioned|hinted|confirmed|provided|also|seem)",
+    r"^(they|caller) (gave|answered|said|mentioned|hinted|confirmed|provided|also|seem)|"
+    # Its own instructions said back: "Ask which in a few words, in Spanish." on a Spanish bot call (7 Nov)
+    r"^(ask|say|tell them|offer|name them)\b[^.?!]*\b(in (a )?few (short )?words|in (spanish|english))"
+    # The caller talked about, in Spanish: "Creo que ella quiere el puesto de enfermera registrada de Medicina-Cirugía,
+    # así que voy a registrarlo así." (Spanish bot call, 7 Nov)
+    r"|\bvoy a (registrar|anotar)l[oa]s? así\b|^(creo que )?(ella|él|la persona) (quiere|dijo|eligió|prefiere)\b"
+    # Before find_roles, in English on a Spanish call: "Night nursing at Midtown matches several roles, so I'll check
+    # which ones fit." (Spanish bot call, 7 Nov)
+    r"|\bmatch(es)? (several|more than one|two|a few) roles\b|\b(i'll|i will|let me) check which\b",
     re.I)
 # Why someone missed an interview, as Riley might say it back: "I'm sorry you had something come up at home" (hard
 # callers no_show, 6 Nov). On a follow-up, a sentence that shares a group with what the caller said is never spoken
@@ -437,12 +445,14 @@ about. The open roles, by id:
 {chr(10).join(match.line(j) for j in jobs)}
 This list is only for matching their words to an id: never read it out, and never name a role they did not name.
 When they name one, in their own words ("the ICU job", "Brooklyn nights"), call choose_role with its id in that same \
-reply; it gives you that role's questions. If their words fit more than one, ask which in a few words. If they don't \
-know, ask what you have, or want to hear what fits, name no roles yet: first ask where they would like to work \
-(Manhattan, the Bronx, Brooklyn, remote, or anywhere) and which shifts they can work, then call find_roles and offer \
-only the roles it returns (at most three), by title and place, in one or two short sentences. If it returns none, say \
-so and offer to name the open roles or have {a['recruiter']} call them. Only if they ask to hear every open role, call \
-list_roles and name them. When they pick one, call choose_role."""
+reply; it gives you that role's questions. If their words fit more than one ("night nursing at Midtown"), call \
+find_roles with the place and shifts they named and offer only the roles it returns, by title, in one short \
+sentence: a role you name without it is never said. If they don't know, ask what you have, or want to hear what \
+fits, name no roles yet: first ask where they would like to work (Manhattan, the Bronx, Brooklyn, remote, or \
+anywhere) and which shifts they can work, then call find_roles and offer only the roles it returns (at most \
+three), by title and place, in one or two short sentences. If it returns none, say so and offer to name the open \
+roles or have {a['recruiter']} call them. Only if they ask to hear every open role, call list_roles and name them. \
+When they pick one, call choose_role."""
 
 
 def instructions(cfg: dict, prefilled: dict | None = None, carried: dict | None = None,

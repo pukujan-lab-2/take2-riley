@@ -107,17 +107,18 @@ stack:
     - { provider: google, model: gemini-2.5-flash }
     - { provider: inferhub, model: deepseek-v4.1-flash }
   brain_timeout_s: 4
-  # Deepgram first (owner, 5 Nov): it streams the words while the caller talks, so the turn ends about 0.5 s sooner
-  # than Parakeet on the Pro, which only starts after they stop and sits a network hop away. The Pro stays as the backup.
+  # Our own speech first (owner, 7 Nov: self-hosted saves the money and measured the same wait at the caller's ear,
+  # 2.2 s with streaming listening against 2.1 s on the cloud). The cloud takes over when no server of ours has room
+  # or one fails. Before: Deepgram and Cartesia first (5-6 Nov), the Pro the backup.
   listens:
+    - { provider: pro-speech, stack: english-fast }
     - { provider: deepgram, model: nova-3 }
-    - { provider: pro-speech, stack: english-fast }
-  # A fallback chain like brain. Cartesia first again (plan upgraded 6 Nov): the Pro's shared speech server streams
-  # over the tailnet as it speaks, and on a Telnyx callback any stall there came through as choppy, radio-like
-  # gaps. The Pro takes over if Cartesia fails.
   speaks:
-    - { provider: cartesia, model: sonic-3, speed: 1.05 }
     - { provider: pro-speech, stack: english-fast }
+    - { provider: cartesia, model: sonic-3, speed: 1.05 }
+  # Every project's speech goes through one gateway on the VPS, whose routes.toml picks the server (voice-agent-research
+  # docs/speech-gateway.md): English on the Pro, other languages on the Windows PC, the cloud chain above when both are full
+  speech_gateway: { url_env: SPEECH_GATEWAY_URL, url: 'http://host.docker.internal:18800', project: riley }
 
 # What this business keeps. Every call is stored in full in Octo; these choose what else happens to it.
 records:
