@@ -1,7 +1,8 @@
 """Riley's calls: src/agent.py (AGENT_PROFILE=riley) hands each call to the number (or a browser test room) here.
 
   caller ──phone──► LiveKit number ──dispatch rule──► room ◄──► this worker
-    Deepgram listens, the brain chain (screen.yaml stack.brain) decides, Cartesia speaks;
+    our own speech servers listen and speak (screen.yaml stack.listens and stack.speaks, through the speech gateway),
+    the brain chain (screen.yaml stack.brain) decides;
     the turn detector and Silero VAD end turns and handle barge-in; screen.yaml is re-read for every call.
 
 Each call is stored in Octo (riley/octo.py): the transcript, the recorded answers, the scorecard and the latency of \
@@ -79,6 +80,17 @@ def ear(listens: dict, vad):
     return deepgram.STT(model=listens['model'], keyterm=KEYTERMS, smart_format=True, **proxy)
 
 
+def hearing(ears: list, vad):
+    """The chain of ears as one: a single streaming ear on its own (screen.yaml has one entry since 8 Nov), else a
+    fallback chain."""
+    return ears[0] if len(ears) == 1 and ears[0].capabilities.streaming else stt.FallbackAdapter(ears, vad=vad)
+
+
+def speaking(chain: list):
+    """The chain of voices as one: a single voice on its own, else a fallback chain."""
+    return chain[0] if len(chain) == 1 else tts.FallbackAdapter(chain)
+
+
 def voices(speaks: list[dict]) -> list:
     """Riley's voice chain, from screen.yaml stack.speaks: the first speaks, the next takes over when it fails."""
     return [voice(v) for v in speaks]
@@ -140,10 +152,9 @@ async def entrypoint(ctx: JobContext):
     llm_, chain = brain.build(stack)
     loading: set[asyncio.Future] = set()  # kept so a background load is not garbage-collected mid-swap
     ears: list[stt.STT] = [ear(e, ctx.proc.userdata['vad']) for e in stack['listens']]
-    stt_ = (ears[0] if len(ears) == 1 and ears[0].capabilities.streaming
-            else stt.FallbackAdapter(ears, vad=ctx.proc.userdata['vad']))
+    stt_ = hearing(ears, ctx.proc.userdata['vad'])
     chain_v = voices(stack['speaks'])
-    tts_ = chain_v[0] if len(chain_v) == 1 else tts.FallbackAdapter(chain_v)
+    tts_ = speaking(chain_v)
     pro = next((v for v in chain_v if isinstance(v, ProSpeechTTS)), None)
     # Our own speech servers first, through the shared speech gateway: the call takes a place on the one for its
     # language that has room (riley/speech_route.py)
