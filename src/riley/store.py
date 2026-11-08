@@ -836,6 +836,41 @@ async def save_facts(candidate_id: int, facts: dict) -> dict:
 SANDBOX_DAYS = 7   # a demo workspace (`guest-…`) nobody opened for this long is deleted, every row of it
 
 
+async def adopt_guest(guest: str, org_key: str) -> dict:
+    """A demo visitor who signs up and picks "Keep my demo jobs and candidates": their own demo sandbox's rows move to
+    their new org (docs/decisions/0028-org-admin-and-guest-upgrade.md), in one statement. Only a `guest-` key into an
+    `org_` key, and only rows carrying that guest key: never `live`, `try`, another guest's or another org's. The bias
+    seed's made-up people stay behind and are purged with the sandbox, and an application to a job outside the
+    sandbox stays too. Moved people keep `facts.demo`, so Riley still never rings them. Returns the counts moved."""
+    if not re.fullmatch(r'guest-[0-9a-f]{12}', guest or '') or not re.fullmatch(r'org_\d+', org_key or ''):
+        raise ValueError('only a demo sandbox moves, and only into an org')
+    rows = await octo.query(
+        "with own as (select id from candidates where sandbox = $1 and coalesce(facts->>'demo', '') <> 'bias'), "
+        'jobs_ as (select id from jobs where sandbox = $1), '
+        'apps as (select id from applications where sandbox = $1 and candidate_id in (select id from own) '
+        'and job_id in (select id from jobs_)), '
+        'h as (update hospitals set sandbox = $2 where sandbox = $1 returning 1), '
+        'j as (update jobs set sandbox = $2 where sandbox = $1 returning 1), '
+        'c as (update candidates set sandbox = $2, guest = null, expires = null '
+        'where id in (select id from own) returning 1), '
+        'a as (update applications set sandbox = $2 where id in (select id from apps) returning 1), '
+        'e as (update events set sandbox = $2 where sandbox = $1 and (application_id in (select id from apps) '
+        'or (application_id is null and (candidate_id is null or candidate_id in (select id from own)))) returning 1), '
+        'm as (update messages set sandbox = $2 where sandbox = $1 and (application_id is null '
+        'or application_id in (select id from apps)) returning 1), '
+        'su as (update summaries set sandbox = $2 where sandbox = $1 and application_id in (select id from apps) '
+        'returning 1), '
+        'ca as (update calls set sandbox = $2 where sandbox = $1 returning 1), '
+        'se as (update settings set sandbox = $2 where sandbox = $1 and key not in '
+        '(select key from settings where sandbox = $2) returning 1), '
+        'p as (update job_postings set sandbox = $2 where sandbox = $1 returning 1), '
+        "x as (update sandboxes set last_seen = now() - interval '30 days' where id = $1 returning 1) "
+        'select (select count(*) from j) as jobs, (select count(*) from c) as candidates, '
+        '(select count(*) from a) as applications, (select count(*) from x) as sandbox', [guest, org_key])
+    r = rows[0] if rows else {}
+    return {k: int(r.get(k) or 0) for k in ('jobs', 'candidates', 'applications')}
+
+
 async def purge_sandboxes(now: datetime | None = None, days: int = SANDBOX_DAYS) -> list[str]:
     """Delete every row of the demo sandboxes unseen for `days` (web/session.py marks them seen; web/server.py
     purge_hourly runs it), children first.
