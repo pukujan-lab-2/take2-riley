@@ -282,6 +282,14 @@ create table if not exists summaries (
   at timestamptz not null default now()
 );
 create index if not exists summaries_sandbox on summaries (sandbox);
+-- Per-org Riley (riley/tenant.py): the numbers that ring an org. A number no org owns is Hudson Park's (`live`).
+-- orgs.employer and orgs.signature (how candidates hear and read the org's name) are added by org_columns() below,
+-- once, because an ALTER on orgs would lock the table every sign-in reads
+create table if not exists org_numbers (
+  number text primary key,                  -- ten digits (store.phone_key)
+  org_id bigint not null references orgs(id),
+  added timestamptz not null default now()
+);
 """
 _migrated = False
 
@@ -365,6 +373,7 @@ async def migrate() -> None:
     await octo.migrate()  # calls and eval_runs first: the web app reads calls.sandbox before any call is saved
     await octo.query(SCHEMA)
     await platform_sessions()
+    await org_columns()
 
 
 async def platform_sessions() -> None:
@@ -380,6 +389,21 @@ async def platform_sessions() -> None:
                             "and column_name = 'org_id'", [])
     if rows and rows[0]['is_nullable'] == 'NO':
         await octo.query('alter table sessions alter column org_id drop not null', [])
+
+
+# Columns added to orgs after it shipped: the employer name candidates hear and read (else orgs.name) and the recruiter
+# signature on outcome emails (else the name of the person who decided)
+ORG_COLUMNS = {'employer': 'text', 'signature': 'text'}
+
+
+async def org_columns() -> None:
+    """Add the orgs columns that are still missing, and only those: the catalog is read first, so a start with them in
+    place takes no lock on orgs (the lesson of the sessions migration, decision 0024)."""
+    rows = await octo.query("select column_name from information_schema.columns where table_name = 'orgs'", [])
+    have = {r['column_name'] for r in rows}
+    for name, kind in ORG_COLUMNS.items():
+        if name not in have:
+            await octo.query(f'alter table orgs add column if not exists {name} {kind}', [])
 
 
 async def ensure() -> None:
@@ -597,9 +621,10 @@ def _j_load(v):
     return json.loads(v) if isinstance(v, str) else v
 
 
-async def for_call(sandbox: str, phone: str) -> tuple[dict | None, dict, dict]:
-    """The application a call from this number is about (their newest one not yet screened), with what the resume
-    says and what they already confirmed for another role. (None, {}, {}) for an unknown number."""
+async def for_call(sandbox: str, phone: str, application_id=None) -> tuple[dict | None, dict, dict]:
+    """The application a call from this number is about (the one a first screen call Riley placed names, else their
+    newest one not yet screened), with what the resume says and what they already confirmed for another role.
+    (None, {}, {}) for an unknown number."""
     apps = await octo.query(
         'select a.id, a.candidate_id, a.job_id, a.status, a.answers, a.applied, c.name, j.title, j.questions, '
         'j.facts as job_facts, j.unit, j.shift, j.hours, h.name as hospital from applications a '
@@ -607,7 +632,8 @@ async def for_call(sandbox: str, phone: str) -> tuple[dict | None, dict, dict]:
         'left join hospitals h on h.id = j.hospital_id '
         'where c.sandbox = $1 and c.phone = $2 and c.merged_into is null and a.withdrawn is null '
         'order by a.applied desc', [sandbox, phone_key(phone)])
-    current = next((a for a in apps if a['status'] == 'applied'), None)
+    named = [a for a in apps if application_id is not None and str(a['id']) == str(application_id)]
+    current = next((a for a in named + apps if a['status'] == 'applied'), None)
     if not current:
         return None, {}, {}
     return (current, *call_answers(apps, current['id']))

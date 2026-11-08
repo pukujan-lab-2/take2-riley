@@ -4,7 +4,9 @@ Only when SIP_OUTBOUND_TRUNK_ID is set (the owner's Telnyx trunk `riley-telnyx`,
 in riley/keys.py). Without it nothing is dialled and `place` says why, so the web page offers Riley's number instead.
 
 The room and the dispatch carry only ids and the mode ({'mode': 'guest' | 'outcome' | 'status' | 'callback' |
-'follow_up', 'candidate_id', 'application_id', 'job_id'?, 'message_id'?, 'event_ids'?}); riley/main.py reads them.
+'follow_up' | 'screen', 'candidate_id', 'application_id', 'job_id'?, 'message_id'?, 'event_ids'?}); riley/main.py reads
+them, and the application, job or candidate named decides which org the call is for (riley/tenant.py). 'screen' is the
+first screen call an org's staff ask for, for people they imported (web/console.py api_screen).
 The scheduler (riley/scheduler.py) places 'callback' (finish the screen they asked to be called back for) and
 'follow_up' (reminders, a missed interview, a moved date: the events named in `event_ids`). The phone number goes only
 to the SIP request, never into a room name or metadata, so it never reaches the calls table or the results page. A
@@ -25,7 +27,7 @@ TRY = 'try'  # riley/guest.py SANDBOX: the /try visitors, apart from Hudson Park
 GUEST = re.compile(r'guest-[0-9a-f]{12}')  # web/tracker/rules.py is_guest: a console demo visitor's sandbox
 
 AGENT = 'nurse-screen'
-MODES = ('guest', 'outcome', 'status', 'callback', 'follow_up')
+MODES = ('guest', 'outcome', 'status', 'callback', 'follow_up', 'screen')
 # SIP answers that mean the person didn't pick up: timeout, unavailable, busy, cancelled, declined
 NO_ANSWER = {408, 480, 486, 487, 603}
 

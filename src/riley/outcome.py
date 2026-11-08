@@ -29,7 +29,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
-from . import bias, octo, store
+from . import bias, octo, store, tenant
 from .helpline import when
 from .identity import day
 
@@ -43,6 +43,7 @@ ORG_MODE = 'normal'          # a real employer's org (org_<id>): Dana decides, n
 WITH = {'recruiter': 'Dana, the recruiter', 'nurse': 'a nurse interviewer from the unit'}
 QUIET_START, QUIET_END = time(21), time(8)   # no outcome call between 9 pm and 8 am, their time
 AUTO_BY = 'dana (auto, demo)'
+FROM_ADDRESS = 'no-reply@riley.design-bakery.com'   # an org's .eml sender address until orgs send their own mail
 
 # Words the fact check looks for: a role, unit, shift or item named in the text must be in the parts.
 ITEMS = ['rn', 'lpn', 'cna', 'pct', 'bls', 'acls', 'pals', 'nrp', 'ccrn', 'tncc', 'ekg', 'iv', 'icu', 'micu', 'ed',
@@ -352,6 +353,13 @@ def subject(message: dict, application: dict) -> str:
     return f'Your application for {role}' + (', and another role that fits' if offers else '')
 
 
+def recruiter_of(by: str, said: dict) -> str:
+    """The recruiter a real org's message names: the person who decided, by name; an address or Riley's own automatic
+    decision gives the org's recruiter instead (riley/tenant.py names)."""
+    by = (by or '').strip()
+    return said['recruiter'] if not by or '@' in by or by == AUTO_BY else by[:80]
+
+
 def email(message: dict, application: dict) -> dict:
     """Dana's email for one message: {subject, text, html}, signed by her. No provider yet: it is shown and saved as
     an .eml (`eml()`), and `messages.channel` says so."""
@@ -361,7 +369,8 @@ def email(message: dict, application: dict) -> dict:
     # Dana's own edit goes out as she wrote it; otherwise the same parts in her first person
     edited = _load(message.get('edits'))
     body = (message.get('text') or '') if edited or not parts.get('result') else template(parts, first_person=True)
-    sign = f'{recruiter}\nRecruiter, {employer}'
+    # a real org's own signature when it set one (Settings), else the recruiter's name and the employer
+    sign = parts.get('signature') or f'{recruiter}\nRecruiter, {employer}'
     reply = ('Reply to this email or call our recruitment line, and you will reach me or Riley, our AI assistant.')
     fair = fair_link(message, application)
     note = f'Optional: help us check our process is fair: {fair}' if fair else ''
@@ -375,7 +384,7 @@ def email(message: dict, application: dict) -> dict:
         paras += (f'<p style="font-size:13px;color:#666">Optional: <a href="{html.escape(fair)}" style="color:#666">'
                   'help us check our process is fair</a></p>')
     page = (f'<div style="font-family:Georgia,serif;font-size:16px;line-height:1.5;color:#222;max-width:560px">'
-            f'{paras}<p>{html.escape(recruiter)}<br>Recruiter, {html.escape(employer)}</p></div>')
+            f'{paras}<p>{"<br>".join(html.escape(line) for line in sign.splitlines())}</p></div>')
     return {'subject': subject({**message, 'parts': parts}, application), 'text': text, 'html': page}
 
 
@@ -399,7 +408,13 @@ def eml(message: dict, application: dict, to: str | None = None) -> bytes:
     e = email(message, application)
     m = EmailMessage()
     m['Subject'] = e['subject']
-    m['From'] = 'Dana at Hudson Park Health <dana@hudsonpark.example>'
+    parts = _load(message.get('parts')) or {}
+    if parts.get('recruiter') and parts.get('employer') and parts.get('employer') != 'Hudson Park Health':
+        # a real org's sender: its recruiter and name, on Riley's own address (no org has its own mail yet)
+        sender = re.sub(r'[<>"\r\n]', '', f"{parts['recruiter']} at {parts['employer']}")[:120]
+        m['From'] = f'{sender} <{FROM_ADDRESS}>'
+    else:
+        m['From'] = 'Dana at Hudson Park Health <dana@hudsonpark.example>'
     m['To'] = to or application.get('email') or 'candidate@example.com'
     m.set_content(e['text'])
     m.add_alternative(e['html'], subtype='html')
@@ -528,8 +543,13 @@ async def decide(sandbox: str, application_id: int, result: str, reason: str, cr
            'slots': _load(app.get('slots')), 'options': _load(app.get('options'))}
     resumes = await octo.query('select facts from resumes where candidate_id = $1 order by at desc limit 1',
                                [app['candidate_id']])
-    parts = parts_for(result, reason, crit, offers, job, app.get('name') or '', cfg, now, tz,
+    said = await tenant.names_for(sandbox, cfg)
+    parts = parts_for(result, reason, crit, offers, job, app.get('name') or '', tenant.branded(cfg, said), now, tz,
                       answers=_load(app.get('answers')) or {}, resume=_load(resumes[0]['facts']) if resumes else {})
+    if said['org']:  # a real org's message is from the person who decided, signed as the org says (riley/tenant.py)
+        parts['recruiter'] = recruiter_of(by, said)
+        if said['signature']:
+            parts['signature'] = said['signature']
     text, how = await draft(parts, cfg)
     parts['drafted_by'] = how
     decision = {'result': result, 'reason': reason, 'criteria': list(criteria_ids or []), 'by': by,

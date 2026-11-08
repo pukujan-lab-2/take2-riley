@@ -62,6 +62,8 @@ def _openings(cfg: dict) -> dict:
         'callback': [Screener(cfg, placed='callback').opening(), Screener(cfg, who=WHO, placed='callback').opening(),
                      helpline.HelpLine(cfg, ROWS, who=WHO, placed='callback').opening()],
         'follow_up': [followup.FollowUpLine(cfg, follow, WHO).opening()],
+        # the first screen of someone a recruiter imported (web/console.py api_screen)
+        'screen': [Screener(cfg, placed='screen').opening(), Screener(cfg, who=WHO, placed='screen').opening()],
     }
     assert set(out) == set(outbound.MODES)
     return out
@@ -69,7 +71,8 @@ def _openings(cfg: dict) -> dict:
 
 WHY = {'guest': 'calling for your demo', 'outcome': 'calling with an update on your application',
        'status': 'screen is done', 'callback': 'calling you back, as you asked',
-       'follow_up': 'calling with an update on your application'}
+       'follow_up': 'calling with an update on your application',
+       'screen': 'calling about the nursing role you applied for'}
 
 
 @pytest.mark.parametrize('notice', [True, False])

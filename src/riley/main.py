@@ -40,6 +40,7 @@ from . import (
     scheduler,
     speech_route,
     store,
+    tenant,
 )
 from .pro_speech import ProSpeechSTT, ProSpeechTTS
 from .screener import END_WORDS, Screen, Screener, carry_over, greeting, job_config, settled
@@ -180,6 +181,14 @@ async def entrypoint(ctx: JobContext):
     # The scheduler's calls (riley/scheduler.py): a callback is their own call placed by Riley, so it finds the
     # record by number the same way; a follow-up gives the updates named in event_ids
     callback, follow, follow_who = meta.get('mode') == 'callback', None, None
+    # Which employer the call is for (riley/tenant.py): the record a placed call names, else the number dialled.
+    # Hudson Park's (`live`) when neither says otherwise, as before
+    home = tenant.LIVE
+    if source == 'web' and octo.ready():
+        try:
+            home = await tenant.home(meta)
+        except Exception as e:
+            print('org lookup failed:', type(e).__name__, e, flush=True)
     if source == 'phone' and octo.ready():
         try:
             await ctx.connect()
@@ -190,16 +199,21 @@ async def entrypoint(ctx: JobContext):
                 demo = await guest.by_application(int(meta['application_id']))
             caller = await asyncio.wait_for(ctx.wait_for_participant(), 3 if not meta else 30)
             number = caller.attributes.get('sip.phoneNumber', '')
+            home = await tenant.home(meta, caller.attributes.get('sip.trunkPhoneNumber'))
+            said = await tenant.names_for(home, cfg)
+            if said['org']:  # Riley says this employer's name, never Hudson Park's
+                cfg = tenant.branded(cfg, said)
+                greeting_audio = None
             for _ in range(60):  # a call Riley placed: the person is in the room while it rings; speak once answered
                 if not meta or caller.attributes.get('sip.callStatus', 'active') == 'active':
                     break
                 await asyncio.sleep(0.5)
             # The demo's order on one number: screen, help line until the outcome rings, the outcome call, then
             # their next own call starts the interview again
-            if number and not meta:  # a /try guest's records are in guest.SANDBOX, everyone else's in live
-                for home in (guest.SANDBOX, 'live'):
-                    if outcome.auto_decides(await outcome.get_mode(home)) and \
-                            await store.restart_after_outcome(home, number):
+            if number and not meta:  # a /try guest's records are in guest.SANDBOX, everyone else's in their org's
+                for where in (guest.SANDBOX, home):
+                    if outcome.auto_decides(await outcome.get_mode(where)) and \
+                            await store.restart_after_outcome(where, number):
                         break
             demo = demo or (await guest.find(number) if number and (not meta or callback) else None)
             if demo:  # screened for the job they were given, with its facts and questions
@@ -207,8 +221,8 @@ async def entrypoint(ctx: JobContext):
                 app = {'id': demo['application_id'], 'candidate_id': demo['candidate_id']}
                 prefilled = guest.resume_answers(demo)  # their made-up resume, read back and one gap asked
             else:
-                app, prefilled, carried = await store.for_call('live', number)
-            rows = [] if app or (meta and not callback) else await store.status('live', number)
+                app, prefilled, carried = await store.for_call(home, number, meta.get('application_id'))
+            rows = [] if app or (meta and not callback) else await store.status(home, number)
             extras = await scheduler.follow_up_items(meta.get('event_ids') or [])
             if meta.get('mode') == 'follow_up' and extras and meta.get('application_id'):
                 oa = await outcome.application(int(meta['application_id']))
@@ -221,11 +235,15 @@ async def entrypoint(ctx: JobContext):
     # Track 6: an approved outcome waiting for this caller, or an outbound call placed for one, is given first
     # (riley/outcomeline.py). Dana's recorded lines are made in the background if this worker has none yet.
     out: outcomeline.Outcome | None = None
-    if source == 'phone' and octo.ready() and meta.get('mode') not in ('guest', 'status', 'follow_up'):
+    if source == 'phone' and octo.ready() and meta.get('mode') not in ('guest', 'status', 'follow_up', 'screen'):
         try:
-            found = await outcomeline.lookup('live', number, ctx.room.metadata)
+            found = await outcomeline.lookup(home, number, ctx.room.metadata)
             if found:
                 m, oa = found
+                if tenant.is_org(m.get('sandbox')):  # the outcome is said in the name of the person who decided
+                    p = outcomeline.parts(m)
+                    cfg = tenant.branded(cfg, {**await tenant.names_for(m['sandbox'], cfg),
+                                               **({'recruiter': p['recruiter']} if p.get('recruiter') else {})})
                 # Other updates due the same day ride along on the outcome call (riley/scheduler.py)
                 said = scheduler.lines(await scheduler.follow_up_items(meta.get('event_ids') or []),
                                        cfg['agent']['recruiter'], oa.get('timezone') or scheduler.TZ)
@@ -241,7 +259,7 @@ async def entrypoint(ctx: JobContext):
     carried = carry_over(cfg, carried)
     if not app and not rows and octo.ready():
         try:
-            jobs = await asyncio.wait_for(match.open_jobs('live'), 3)
+            jobs = await asyncio.wait_for(match.open_jobs(home), 3)
         except Exception as e:  # no list: the screen for screen.yaml's job, as before
             print('open jobs lookup failed:', type(e).__name__, e, flush=True)
     # A browser call from /try with a role picked (web/server.py api_talk): that job's questions and facts, no asking
@@ -310,7 +328,7 @@ async def entrypoint(ctx: JobContext):
     async def _save_help():
         assert help is not None  # only registered for help calls
         try:
-            await helpline.save('live', rows[0]['candidate_id'], help)
+            await helpline.save(home, rows[0]['candidate_id'], help)
             print('help call stored', ctx.room.name, len(help.requests), 'requests', flush=True)
         except Exception as e:
             print('help call store failed', ctx.room.name, e, flush=True)
@@ -330,7 +348,7 @@ async def entrypoint(ctx: JobContext):
     async def _save_follow_up():
         assert follow is not None  # only registered for follow-up calls
         try:
-            await followup.save(follow.items[0].get('sandbox') or 'live', follow)
+            await followup.save(follow.items[0].get('sandbox') or home, follow)
             print('follow-up call stored', ctx.room.name, follow.identity, follow.reconfirmed, flush=True)
         except Exception as e:
             print('follow-up call store failed', ctx.room.name, e, flush=True)
@@ -342,7 +360,7 @@ async def entrypoint(ctx: JobContext):
         if not screen.callback:
             return
         try:
-            due = await scheduler.queue_callback(guest.SANDBOX if demo else 'live', candidate_id, application_id,
+            due = await scheduler.queue_callback(guest.SANDBOX if demo else home, candidate_id, application_id,
                                                  screen.callback)
             print('callback queued', application_id, due.isoformat(), flush=True)
         except Exception as e:
@@ -369,15 +387,15 @@ async def entrypoint(ctx: JobContext):
             # Bot calls are synthetic, so their transcripts are public; phone calls follow screen.yaml records:
             public = source == 'bot' or records.get('publish_phone_transcripts', False)
             try:
-                # a /try guest's call is the demo's, never in Hudson Park's call list
-                await octo.save_call(record, source, public, sandbox=guest.SANDBOX if demo else 'live')
+                # a /try guest's call is the demo's, never in Hudson Park's call list; an org's is in its own
+                await octo.save_call(record, source, public, sandbox=guest.SANDBOX if demo else home)
                 print('stored in octo', ctx.room.name, flush=True)
             except Exception as e:  # the local copy above still has it
                 print('octo store failed', ctx.room.name, e, flush=True)
             try:
                 if screen.callback and screen.identity != 'not_them' and not screen.answers and not app and number:
                     # A new caller who had no time at all: kept as a person, so the callback has someone to ring
-                    who_new = await store.upsert_candidate('live', phone=number)
+                    who_new = await store.upsert_candidate(home, phone=number)
                     await _callback(who_new['id'], None)
                 if screen.identity == 'not_them' or not screen.answers:
                     if app and screen.identity != 'not_them':
@@ -391,7 +409,7 @@ async def entrypoint(ctx: JobContext):
                     if demo:
                         await _guest_done(decided)
                 elif source == 'phone' and number:
-                    new = await store.save_new_caller('live', number, cfg, screen.answers, record['scorecard'],
+                    new = await store.save_new_caller(home, number, cfg, screen.answers, record['scorecard'],
                                                       job_id=screen.job['id'] if screen.job else None)
                     print('new caller stored as application', new['id'], flush=True)
                     await _callback(new['candidate_id'], new['id'])
@@ -405,7 +423,7 @@ async def entrypoint(ctx: JobContext):
     async def _auto(application_id: int) -> dict | None:
         # 'immediate' mode (the demo): Dana's pre-written outcome is decided, approved and rung at once
         try:
-            m = await outcome.auto('live', application_id)
+            m = await outcome.auto(home, application_id)
             print('auto outcome', application_id, m and m['kind'], m and m.get('ring'), flush=True)
             return m
         except Exception as e:
@@ -415,7 +433,7 @@ async def entrypoint(ctx: JobContext):
     async def _matches(candidate_id: int):
         # What they said about themselves goes into their facts, and each job they fully qualify for is a match event
         try:  # a failed match never stops the outcome that follows
-            fits = await match.after_screen(guest.SANDBOX if demo else 'live', candidate_id, screen.cfg['questions'],
+            fits = await match.after_screen(guest.SANDBOX if demo else home, candidate_id, screen.cfg['questions'],
                                             screen.answers)
             print('matches', [f['job_id'] for f in fits], flush=True)
         except Exception as e:
@@ -484,8 +502,9 @@ async def entrypoint(ctx: JobContext):
                                                          'hospital': demo.get('hospital') or cfg['agent']['employer']},
                          outbound=bool(meta), on_language=_language, tools=[end])
     else:
-        # A callback is a call Riley placed: it opens with who is calling and why (riley/identity.py hello)
-        placed = 'callback' if callback else None
+        # A callback or a first screen is a call Riley placed: it opens with who is calling and why
+        # (riley/identity.py hello)
+        placed = 'callback' if callback else 'screen' if meta.get('mode') == 'screen' else None
         agent = (helpline.HelpLine(cfg, rows, help.tz, who=who, placed=placed, tools=[end]) if help else
                  Screener(cfg, greeting_audio=greeting_audio, prefilled=prefilled, carried=carried, who=who,
                           jobs=jobs, on_language=_language, placed=placed, tools=[end]))

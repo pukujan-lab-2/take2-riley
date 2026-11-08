@@ -37,7 +37,8 @@ def question(who: dict, tz: str = 'America/New_York') -> str:
 # Riley phoned was the first outbound test call's opening (5 Nov). It names no outcome before the identity check.
 PLACED = {'outcome': 'calling with an update on your application',
           'follow_up': 'calling with an update on your application',
-          'callback': 'calling you back, as you asked'}
+          'callback': 'calling you back, as you asked',
+          'screen': 'calling about the nursing role you applied for'}
 
 
 def hello(cfg: dict, placed: str | None = None) -> str:
