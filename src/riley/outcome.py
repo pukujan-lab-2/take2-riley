@@ -701,32 +701,61 @@ async def deliver(message_id: int) -> bool:
     return True
 
 
+def open_slots(app: dict, limit: int = 3) -> list[dict]:
+    """The job's open interview times as Riley and the portal offer them, from the job as it is now: a time a
+    recruiter added after the decision is offered too, and one already taken is not."""
+    return slot_list(_load(app.get('slots')), tz=app.get('timezone') or 'America/New_York', limit=limit)
+
+
+def with_fresh_slots(m: dict, app: dict) -> dict:
+    """The message with its listed times replaced by the job's open ones, when the job has any (outcomeline)."""
+    parts = _load(m.get('parts')) or {}
+    fresh = open_slots(app)
+    if m.get('kind') != 'next_round' or not fresh:
+        return m
+    return {**m, 'parts': json.dumps({**parts, 'slots': fresh})}
+
+
 async def book(message_id: int, slot: str, with_whom: str) -> dict:
-    """Book one of the message's listed slots, with the recruiter or a nurse interviewer: a `booked` event, and the
-    time comes off the job's open slots. Anything not on the list, or already taken, is refused."""
+    """Book one of the times Riley offered for a next-round message, with the recruiter or a nurse interviewer: the
+    message's listed times or the job's open ones now. Anything not on either list, or already taken, is refused."""
     if with_whom not in WITH:
         return {'booked': False, 'why': f'with must be one of {sorted(WITH)}'}
     m = await message(message_id)
     if m['kind'] != 'next_round' or m['status'] not in ('approved', 'delivered'):
         return {'booked': False, 'why': 'not an approved next-round message'}
-    chosen = pick_slot((_load(m['parts']) or {}).get('slots', []), slot, with_whom)
+    app = await application(m['application_id'])
+    chosen = (pick_slot((_load(m['parts']) or {}).get('slots', []), slot, with_whom)
+              or pick_slot(open_slots(app, limit=50), slot, with_whom))
     if not chosen:
         return {'booked': False, 'why': 'not one of the listed times'}
-    app = await application(m['application_id'])
-    left = [s for s in _load(app.get('slots')) or []
-            if store.ts(s.get('at') if isinstance(s, dict) else s) != store.ts(chosen['at'])]
-    if len(left) == len(_load(app.get('slots')) or []):
+    return await record_booking(m['sandbox'], app, chosen, with_whom, by='candidate', message_id=int(message_id))
+
+
+async def record_booking(sandbox: str, app: dict, chosen: dict, with_whom: str | None, by: str,
+                         message_id: int | None = None, interviewer_id=None, must_be_open: bool = True) -> dict:
+    """Write one booking: the time comes off the job's open slots, a `booked` event names who it is with (and the
+    interviewer the slot was opened for, so only they see it: web/console.py mine), and the reminder is queued.
+    `must_be_open`: refuse a time that is no longer among the job's slots (a candidate's pick); staff may book any."""
+    slots = _load(app.get('slots')) or []
+    at = store.ts(chosen['at'])
+    left = [s for s in slots if store.ts(s.get('at') if isinstance(s, dict) else s) != at]
+    if must_be_open and len(left) == len(slots):
         return {'booked': False, 'why': 'that time was just taken'}
-    await octo.query('update jobs set slots = $2 where id = $1', [app['job_id'], json.dumps(left)])
-    detail = {'message_id': int(message_id), 'at': chosen['at'], 'say': chosen['say'], 'with': with_whom}
-    # The interviewer the slot was opened for, if any, so only they see it among their interviews (web/console.py mine)
-    opened = next((s for s in _load(app.get('slots')) or [] if isinstance(s, dict)
-                   and store.ts(s.get('at')) == store.ts(chosen['at'])), {})
-    if (who := chosen.get('interviewer_id') or opened.get('interviewer_id')) is not None:
-        detail['interviewer_id'] = who
-    await store.log(m['sandbox'], 'booked', app['candidate_id'], m['application_id'], detail)
+    if len(left) != len(slots):
+        await octo.query('update jobs set slots = $2 where id = $1', [app['job_id'], json.dumps(left)])
+    tz = app.get('timezone') or 'America/New_York'
+    detail = {'at': at.isoformat() if isinstance(at, datetime) else chosen['at'],
+              'say': chosen.get('say') or (say_time(at, tz) if isinstance(at, datetime) else chosen['at']),
+              'with': with_whom, 'by': by[:80]}
+    if message_id is not None:
+        detail['message_id'] = message_id
+    opened = next((s for s in slots if isinstance(s, dict) and store.ts(s.get('at')) == at), {})
+    if (who := interviewer_id or chosen.get('interviewer_id') or opened.get('interviewer_id')) is not None:
+        detail['interviewer_id'] = int(who)
+    await store.log(sandbox, 'booked', app['candidate_id'], int(app['id']), detail)
     from . import scheduler  # track 11: the reminder and reconfirm request before it
-    await scheduler.queue_reminder(m['sandbox'], app['candidate_id'], m['application_id'], detail, app['title'])
+    await scheduler.queue_reminder(sandbox, app['candidate_id'], int(app['id']), detail, app['title'])
     return {'booked': True, **detail}
 
 
