@@ -107,7 +107,7 @@ class FakeLiveKit:
 async def test_place_without_a_trunk_dials_nothing(monkeypatch):
     monkeypatch.delenv('SIP_OUTBOUND_TRUNK_ID', raising=False)
     lk = FakeLiveKit()
-    assert await outbound.place('+16465552368', {'mode': 'guest', 'application_id': 1}, lk=lk) == \
+    assert await outbound.place('+16465552368', {'mode': 'guest', 'application_id': 1}, lk=lk, sandbox='live') == \
         {'placed': False, 'why': 'no outbound trunk'}
     assert lk.calls == []
 
@@ -117,7 +117,7 @@ async def test_place_dials_through_the_trunk_and_keeps_the_number_out_of_the_roo
     monkeypatch.setenv('RILEY_CALLER_ID', '+16317090065')
     lk = FakeLiveKit()
     out = await outbound.place('+16465552368', {'mode': 'guest', 'candidate_id': 7, 'application_id': 9,
-                                                'phone': '+16465552368'}, lk=lk)
+                                                'phone': '+16465552368'}, lk=lk, sandbox='live')
     assert out['placed'] and out['why'].startswith('out-')
     (_, room), (_, dispatch), (_, sip) = lk.calls
     assert room.name == dispatch.room == sip.room_name == out['why'] and dispatch.agent_name == 'nurse-screen'
@@ -126,7 +126,7 @@ async def test_place_dials_through_the_trunk_and_keeps_the_number_out_of_the_roo
     assert sip.sip_trunk_id == 'ST_test' and sip.sip_call_to == '+16465552368' and sip.sip_number == '+16317090065'
     assert '6465552368' not in room.name + room.metadata
     lk = FakeLiveKit()  # the store's ten digits are dialled as E.164
-    await outbound.place('6465552368', {'mode': 'outcome', 'message_id': 3}, lk=lk)
+    await outbound.place('6465552368', {'mode': 'outcome', 'message_id': 3}, lk=lk, sandbox='live')
     assert lk.calls[2][1].sip_call_to == '+16465552368'
 
 
@@ -138,7 +138,7 @@ def test_place_never_dials_a_made_up_555_01_number_even_with_a_trunk(area, last,
     number = spelling.format(a=area, n=f'{last:02d}')
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv('SIP_OUTBOUND_TRUNK_ID', 'ST_test')
-        out = asyncio.run(outbound.place(number, {'mode': 'outcome', 'message_id': 1}, lk=lk))
+        out = asyncio.run(outbound.place(number, {'mode': 'outcome', 'message_id': 1}, lk=lk, sandbox='live'))
     assert out == {'placed': False, 'why': 'a made-up 555-01xx number: never dialled'} and lk.calls == []
 
 

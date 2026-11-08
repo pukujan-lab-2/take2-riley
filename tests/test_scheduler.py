@@ -335,12 +335,13 @@ async def test_waiting_for_an_answer_says_whether_they_picked_up(monkeypatch):
     monkeypatch.setenv('SIP_OUTBOUND_TRUNK_ID', 'ST_test')
     lk = FakeLiveKit()
     meta = {'mode': 'follow_up', 'candidate_id': 1, 'application_id': 2, 'event_ids': [3, 4]}
-    out = await outbound.place('6465552368', meta, lk=lk, wait=True)
+    out = await outbound.place('6465552368', meta, lk=lk, wait=True, sandbox='live')
     assert out['answered'] is True and lk.calls[2][1].wait_until_answered
     assert json.loads(lk.calls[0][1].metadata)['event_ids'] == [3, 4]
-    out = await outbound.place('6465552368', meta, lk=FakeLiveKit(SipError(486)), wait=True)
+    out = await outbound.place('6465552368', meta, lk=FakeLiveKit(SipError(486)), wait=True, sandbox='live')
     assert out == {'placed': False, 'why': 'dial failed: SipError', 'answered': False}
-    out = await outbound.place('6465552368', meta, lk=FakeLiveKit(RuntimeError('trunk down')), wait=True)
+    out = await outbound.place('6465552368', meta, lk=FakeLiveKit(RuntimeError('trunk down')), wait=True,
+                               sandbox='live')
     assert out['answered'] is None, 'a failed dial says nothing about the person'
 
 

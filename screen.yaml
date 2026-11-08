@@ -141,6 +141,9 @@ dana:
     not_selected: Hi, it's Dana from Hudson Park. I read your screen myself, and Riley has the details.
   # Riley joins the message's parts into sentences with this model; a plain template join if it fails
   draft_model: { provider: anthropic, model: claude-haiku-5-5 }
+  # Riley writes the short summary Dana reads on Today and the sheet with this model (riley/summary.py); the
+  # rule-built lines when it has no key or fails
+  summary_model: { provider: anthropic, model: claude-haiku-5-5 }
   # Her words when the demo decides on its own and no single item's reason fits
   reasons:
     flagged: This role needs every required item on the posting, and your screen showed one that isn't there yet.

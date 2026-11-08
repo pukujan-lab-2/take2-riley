@@ -9,6 +9,7 @@ ever sees another's records (SPEC rule 16). Demographics and accommodations sit 
 that scores or shows a candidate to a recruiter joins them (rules 11 and 12).
 """
 import json
+import os
 import re
 from datetime import UTC, datetime, timedelta
 
@@ -262,6 +263,26 @@ create table if not exists sessions (
   expires timestamptz not null,
   revoked timestamptz
 );
+-- A platform admin (decision 0024) may sign in without being in any org: kind 'platform', no org
+alter table sessions drop constraint if exists sessions_kind_check;
+alter table sessions add constraint sessions_kind_check check (kind in ('staff', 'candidate', 'platform'));
+alter table sessions alter column org_id drop not null;
+-- Who opens Riley's own engineering screens (health, keys, setup, evals, exports): PLATFORM_ADMINS, copied here on
+-- start so take2-riley's intake, which reads the same sessions, agrees without its own setting
+create table if not exists platform_admins (
+  email text primary key,
+  added timestamptz not null default now()
+);
+-- Riley's written summary of one screen for Dana (riley/summary.py), under the application's own sandbox
+create table if not exists summaries (
+  application_id bigint primary key,
+  sandbox text not null,                    -- the application's own tenant key (decision 0022)
+  fingerprint text not null,                -- of the record it was written from (summary.fingerprint)
+  summary jsonb,                            -- {decision, lines, row}; null when writing failed
+  how jsonb not null default '{}',          -- model, tokens, seconds, what the checks dropped, error
+  at timestamptz not null default now()
+);
+create index if not exists summaries_sandbox on summaries (sandbox);
 """
 _migrated = False
 
@@ -351,7 +372,20 @@ async def ensure() -> None:
     global _migrated
     if not _migrated:
         await migrate()
+        await platform_admins()
         _migrated = True
+
+
+async def platform_admins() -> None:
+    """Make the platform_admins table match PLATFORM_ADMINS (comma-separated emails), when it is set. A process
+    without the setting (take2-riley's intake) leaves the table as the web app wrote it."""
+    listed = os.environ.get('PLATFORM_ADMINS')
+    if listed is None:
+        return
+    emails = sorted({e for e in (email_key(x) for x in listed.split(',')) if e})
+    await octo.query('delete from platform_admins where not (email = any($1))', [emails])
+    for email in emails:
+        await octo.query('insert into platform_admins (email) values ($1) on conflict (email) do nothing', [email])
 
 
 async def find_candidate(sandbox: str, phone=None, email=None, license=None) -> dict | None:
@@ -400,7 +434,9 @@ async def apply(sandbox: str, candidate_id: int, job_id: int, resume: str | None
         app = (await octo.query(
             'insert into applications (sandbox, candidate_id, job_id, applied, updated, promised_by) '
             'values ($1, $2, $3, $4, $4, $5) returning *', [sandbox, candidate_id, job_id, now, promised_by(now)]))[0]
-        await octo.query('update jobs set first_applied = coalesce(first_applied, $2) where id = $1', [job_id, now])
+        # only an application in the job's own sandbox counts (a /try guest applies to a Hudson Park job from `try`)
+        await octo.query('update jobs set first_applied = coalesce(first_applied, $2) where id = $1 and sandbox = $3',
+                         [job_id, now, sandbox])
     changes, conflicts = [], []
     if resume:
         last = await octo.query('select facts from resumes where candidate_id = $1 order by at desc limit 1',
@@ -595,6 +631,7 @@ async def drop_self_id(candidate_id: int) -> None:
     await octo.query('delete from self_id where candidate_id = $1', [candidate_id])
 
 
+
 async def bias_rows(sandbox: str) -> list[dict]:
     """One row per decided application with self_id answers: the job, the answers and whether it moved forward.
     No name, id or number, so nothing downstream can tie the answers to a person."""
@@ -699,3 +736,42 @@ async def save_facts(candidate_id: int, facts: dict) -> dict:
     rows = await octo.query('update candidates set facts = facts || $2, consent = consent || $3 where id = $1 '
                             'returning facts', [candidate_id, _j(facts), _j(consent)])
     return _j_load(rows[0]['facts']) if rows else facts
+
+
+SANDBOX_DAYS = 7   # a demo workspace (`guest-…`) nobody opened for this long is deleted, every row of it
+
+
+async def purge_sandboxes(now: datetime | None = None, days: int = SANDBOX_DAYS) -> list[str]:
+    """Delete every row of the demo sandboxes unseen for `days` (web/session.py marks them seen; web/server.py
+    purge_hourly runs it), children first.
+    Only `guest-` sandboxes: never `live`, `try` or an org. Returns the sandboxes removed."""
+    cutoff = (now or datetime.now(UTC)) - timedelta(days=days)
+    rows = await octo.query("select id from sandboxes where id ~ '^guest-[0-9a-f]{12}$' and last_seen < $1",
+                            [cutoff])
+    gone = [r['id'] for r in rows]
+    if not gone:
+        return []
+    people = 'select id from candidates where sandbox = any($1)'
+    apps = 'select id from applications where sandbox = any($1)'
+    for sql in (f'delete from resumes where candidate_id in ({people}) or application_id in ({apps})',
+                f'delete from feedback where candidate_id in ({people}) or application_id in ({apps})',
+                f'delete from accommodations where candidate_id in ({people})',
+                f'delete from self_id where candidate_id in ({people})',
+                'delete from events where sandbox = any($1)',
+                'delete from messages where sandbox = any($1)',
+                'delete from summaries where sandbox = any($1)',
+                'delete from calls where sandbox = any($1)',
+                'delete from settings where sandbox = any($1)',
+                'delete from job_postings where sandbox = any($1)',
+                'delete from applications where sandbox = any($1)',
+                'delete from criteria where job_id in (select id from jobs where sandbox = any($1))',
+                'update candidates set merged_into = null where sandbox = any($1)',
+                'delete from candidates c where c.sandbox = any($1) and not exists '
+                '(select 1 from candidates o where o.merged_into = c.id and not (o.sandbox = any($1)))',
+                'delete from jobs where sandbox = any($1) and not exists '
+                '(select 1 from applications a where a.job_id = jobs.id)',
+                'delete from hospitals h where h.sandbox = any($1) and not exists '
+                '(select 1 from jobs j where j.hospital_id = h.id)',
+                'delete from sandboxes where id = any($1)'):
+        await octo.query(sql, [gone])
+    return gone

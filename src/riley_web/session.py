@@ -1,5 +1,6 @@
 """Who a request is, from its cookies alone (docs/decisions/0022-auth-and-tenancy.md): a signed-in member or
-candidate of one org (`ns_session`), the demo guest (`ns_guest`), or nobody. Never from a request's body or query.
+candidate of one org (`ns_session`), a platform admin (decision 0024), the demo guest (`ns_guest`), or nobody. Never
+from a request's body or query.
 
 This is the part of web/auth.py that other services need too: pukujan-lab-2/take2-riley serves /api/intake/* behind
 this site (web/server.py intake_proxy) and resolves the same cookie the same way. Its scripts/sync_riley.py copies this
@@ -19,9 +20,13 @@ from riley_web import rules
 
 SESSION = 'ns_session'
 GUEST = 'ns_guest'          # web/tracker/api.py COOKIE
-CACHE_SECONDS = 30          # a session is read from the database at most this often per process
+# A session is read from the database at most this often per process. Kept short so that signing out in one container
+# (this site) takes effect in the other (take2-riley's intake) within seconds
+CACHE_SECONDS = 3
+SEEN_SECONDS = 3600         # a demo guest's sandbox is marked as seen at most this often (guest.purge_sandboxes)
 _DEV_SECRET = secrets.token_hex(32)
 _CACHE: dict[str, tuple[float, 'Tenant | None']] = {}
+_SEEN: dict[str, float] = {}
 
 
 def secret() -> str:
@@ -36,13 +41,14 @@ def secret() -> str:
 
 @dataclass(frozen=True)
 class Tenant:
-    kind: str                       # staff | candidate | guest
+    kind: str                       # staff | candidate | guest | platform
     key: str                        # the sandbox this tenant's rows carry, and the only one it writes
-    role: str                       # admin | recruiter | interviewer | candidate | guest
+    role: str                       # admin | recruiter | interviewer | candidate | guest | platform
     org: dict | None = None         # {id, name}
     user: dict | None = None        # staff: {id, email, name}
     account: dict | None = None     # candidate: {id, email}
     extra: dict = field(default_factory=dict)
+    platform: bool = False          # a platform admin (PLATFORM_ADMINS): opens Riley's own engineering screens
 
     @property
     def guest(self) -> bool:
@@ -79,7 +85,9 @@ async def session_of(request: web.Request) -> Tenant | None:
         return hit[1]
     rows = await octo.query(
         'select s.kind, s.org_id, o.key, o.name as org_name, u.id as user_id, u.email, u.name, m.role, '
-        'ca.id as account_id, ca.email as account_email from sessions s join orgs o on o.id = s.org_id '
+        'ca.id as account_id, ca.email as account_email, '
+        'exists (select 1 from platform_admins p where p.email = u.email) as platform '
+        'from sessions s left join orgs o on o.id = s.org_id '
         'left join users u on u.id = s.user_id '
         'left join memberships m on m.user_id = s.user_id and m.org_id = s.org_id '
         'left join candidate_accounts ca on ca.id = s.candidate_account_id and ca.org_id = s.org_id '
@@ -87,11 +95,14 @@ async def session_of(request: web.Request) -> Tenant | None:
     tenant = None
     if rows:
         r = rows[0]
-        org = {'id': int(r['org_id']), 'name': r['org_name']}
-        if r['kind'] == 'staff' and r['role'] in rules.ROLES and r['user_id'] is not None:
-            tenant = Tenant('staff', r['key'], r['role'], org,
-                            user={'id': int(r['user_id']), 'email': r['email'], 'name': r['name']})
-        elif r['kind'] == 'candidate' and r['account_id'] is not None:
+        org = {'id': int(r['org_id']), 'name': r['org_name']} if r['org_id'] is not None else None
+        user = {'id': int(r['user_id']), 'email': r['email'], 'name': r['name']} if r['user_id'] is not None else None
+        platform = bool(r['platform']) and user is not None
+        if r['kind'] == 'staff' and r['role'] in rules.ROLES and user and org:
+            tenant = Tenant('staff', r['key'], r['role'], org, user=user, platform=platform)
+        elif r['kind'] == 'platform' and platform:  # a platform admin in no org: Riley's own screens only
+            tenant = Tenant('platform', rules.PLATFORM, rules.PLATFORM, None, user=user, platform=True)
+        elif r['kind'] == 'candidate' and r['account_id'] is not None and org:
             tenant = Tenant('candidate', r['key'], 'candidate', org,
                             account={'id': int(r['account_id']), 'email': r['account_email']})
     _CACHE[h] = (time.monotonic(), tenant)
@@ -108,8 +119,20 @@ async def tenant_of(request: web.Request) -> Tenant | None:
         tenant = await session_of(request)
     if tenant is None and rules.is_guest(request.cookies.get(GUEST)):
         tenant = Tenant('guest', request.cookies[GUEST], 'guest')
+        await seen(tenant.key)
     request['tenant'] = tenant
     return tenant
+
+
+async def seen(sandbox: str) -> None:
+    """Mark a demo sandbox as in use, so the purge of sandboxes unused for a week (riley/guest.py) leaves it."""
+    now = time.monotonic()
+    if not octo.ready() or now - _SEEN.get(sandbox, -SEEN_SECONDS) < SEEN_SECONDS:
+        return
+    _SEEN[sandbox] = now
+    await store.ensure()
+    await octo.query('insert into sandboxes (id) values ($1) on conflict (id) do update set last_seen = now()',
+                     [sandbox])
 
 
 async def need(request: web.Request, what: str) -> Tenant:
@@ -117,6 +140,6 @@ async def need(request: web.Request, what: str) -> Tenant:
     tenant = await tenant_of(request)
     if tenant is None:
         raise _error(401, 'Sign in first, or try the demo workspace.')
-    if not rules.allowed(tenant.role, what):
+    if not rules.allowed(tenant.role, what, tenant.platform):
         raise _error(403, 'Your role here does not open this.')
     return tenant

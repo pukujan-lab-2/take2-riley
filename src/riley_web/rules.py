@@ -1,9 +1,9 @@
 """Dana's tracker, the rules without a database: who may see and change what, masking, the bar and the order.
 
-Guest access (docs/BUILD-PLAN.md, "Guest access for now"): every visitor gets their own sandbox id in a cookie and sees
-that sandbox plus the `live` records from real calls, with phone numbers cut to the last four digits. A guest writes
-only inside their own sandbox, except Dana's decision on a `live` record (and approving its draft), which the demo
-needs. These functions decide that, so tests can check them for every input.
+Guest access (docs/decisions/0023-guest-lockdown.md): every demo visitor gets their own sandbox id in a cookie and reads
+and writes that sandbox only, made-up people with 555-01xx numbers. They never read or change Hudson Park's real
+(`live`) records, and nothing they do rings a real person. These functions decide that, so tests can check them for
+every input.
 """
 import hashlib
 import hmac
@@ -13,9 +13,6 @@ from datetime import datetime
 
 LIVE = 'live'
 PREFIX = 'guest-'
-# A decision, the approval of its draft and calling them back with it are the only guest writes that may land on a
-# live record; everything else (the outcome mode, say) changes the guest's own sandbox only
-DECISIONS = frozenset({'decide', 'approve', 'call_now'})
 # How outcomes run in a sandbox (track 6 owns them): the tracker only shows and switches them
 MODES = {
     'immediate': ('Immediate (demo)', 'Fast decisions and call-backs right after the screen.'),
@@ -36,29 +33,38 @@ def is_guest(sandbox: str | None) -> bool:
     return bool(sandbox) and re.fullmatch(PREFIX + '[0-9a-f]{12}', sandbox or '') is not None
 
 
-def visible(row_sandbox: str, guest: str) -> bool:
-    return row_sandbox in (guest, LIVE)
-
-
 def can_write(row_sandbox: str, guest: str, action: str, staff: bool = False) -> bool:
-    """A guest changes their own sandbox, or decides on a live record. Nothing else, ever. A signed-in member of an
-    org (`staff`, whose key came from their session on the server) changes only their own org's rows."""
+    """Everyone changes only the rows of the one sandbox they hold: a guest their own made-up sandbox (never `live`,
+    for any `action`), a signed-in member of an org (`staff`, whose key came from their session on the server) their
+    own org's rows."""
+    del action  # every action follows the same rule; kept so each caller still names what it does
     if staff:
         return bool(guest) and row_sandbox == guest
-    if not is_guest(guest):
-        return False
-    return row_sandbox == guest or (row_sandbox == LIVE and action in DECISIONS)
+    return is_guest(guest) and row_sandbox == guest
+
+
+def may_ring(row_sandbox: str, key: str, staff: bool, phone: str | None, fictional: bool) -> bool:
+    """Whether "Call now" (or the ring inside an approval) may go ahead for this tenant: org staff on their own org's
+    row, or a guest in their own sandbox with a made-up number (`fictional`, a 555-01xx one that is never dialled
+    anyway). A guest never rings a real number, whatever they imported or typed."""
+    if staff:
+        return bool(key) and row_sandbox == key
+    return is_guest(key) and row_sandbox == key and (not phone or fictional)
 
 
 # ---- tenancy: who reads and writes what (docs/decisions/0022-auth-and-tenancy.md) ----
 
 ORG_KEY = re.compile(r'org_\d+')
 ROLES = ('admin', 'recruiter', 'interviewer')
-# What each kind of signed-in person may open. `guest` is the demo workspace, which shows every screen on made-up data
+PLATFORM = 'platform'   # the tenant key and role of a platform admin signed in without an org (decision 0024)
+# What each kind of signed-in person may open. `guest` is the demo workspace, which shows the hiring screens on made-up
+# data. `platform` (Riley's own health, keys, setup, evals and exports) is for platform admins only: PLATFORM_ADMINS,
+# whatever their role in an org, never an org's staff for being staff, and never the demo
 ALLOWED = {
     'hire': frozenset({'admin', 'recruiter', 'guest'}),                  # applicants, decisions, messages, reports
     'interview': frozenset({'admin', 'recruiter', 'interviewer', 'guest'}),  # interviews and their scorecards
-    'platform': frozenset({'admin', 'recruiter', 'guest'}),              # calls, traces, health, setup
+    'calls': frozenset({'admin', 'recruiter', 'guest'}),                 # an org's own call traces; the demo's public
+    'platform': frozenset({PLATFORM}),                                   # health, keys, setup, evals, exports
     'portal': frozenset({'candidate', 'guest'}),                         # a candidate's own applications
     'invite': frozenset({'admin', 'recruiter'}),                         # never in the demo: it has no real people
 }
@@ -66,17 +72,19 @@ LINK_LIMITS = {'email': (3, 15), 'ip': (10, 60)}  # at most this many sign-in li
 
 
 def scope_of(key: str, guest: bool) -> list[str]:
-    """The sandboxes a tenant reads. A guest: their own and `live` (numbers masked, as on the demo since day one).
-    A signed-in org member or candidate: their org's rows only, never another's and never a guest's."""
-    return [key, LIVE] if guest and key != LIVE else [key]
+    """The sandboxes a tenant reads: only its own. A guest their made-up sandbox (never Hudson Park's real `live`
+    rows); a signed-in org member or candidate their org's rows, never another's and never a guest's."""
+    del guest  # the same for everyone since 0023; kept so callers say who they are
+    return [key]
 
 
 def readable(row_sandbox: str, scope: list[str]) -> bool:
     return row_sandbox in scope
 
 
-def allowed(role: str | None, what: str) -> bool:
-    return role in ALLOWED.get(what, ())
+def allowed(role: str | None, what: str, platform: bool = False) -> bool:
+    """Whether this role opens `what`; a platform admin (`platform`) opens the platform screens too."""
+    return role in ALLOWED.get(what, ()) or (platform and what == 'platform')
 
 
 def may_invite(inviter: str | None, role: str) -> bool:
@@ -110,28 +118,15 @@ def digest(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def admin_token(key: str | None) -> str:
-    """What the admin cookie holds: a digest of TRACKER_ADMIN_KEY, never the key itself. Empty without a key."""
-    return hashlib.sha256(key.encode()).hexdigest() if key else ''
-
-
-def is_admin(token: str | None, key: str | None) -> bool:
-    """Only a cookie or ?key= that matches the server's key; with no key set, nobody is admin."""
-    expected = admin_token(key)
-    return bool(expected) and bool(token) and hmac.compare_digest((token or '').encode(), expected.encode())
-
-
 def can_mark_no_show(row_sandbox: str, guest: str, kinds: list[str]) -> bool:
     """"Didn't show" is offered on a card only where the guest may write it (their own sandbox, never `live`) and
     only for a booking not already marked: `kinds` is the card's `booked` and `no_show` events, oldest first."""
     return can_write(row_sandbox, guest, 'no_show') and bool(kinds) and kinds[-1] == 'booked'
 
 
-def can_set_mode(target: str, guest: str, admin: bool) -> bool:
-    """A guest switches the outcome mode of their own sandbox. Only Dana, holding the admin key, switches it for
-    `live`, since that changes how real callers hear their outcome."""
-    if target == LIVE:
-        return admin
+def can_set_mode(target: str, guest: str) -> bool:
+    """A guest switches the outcome mode of their own sandbox only. `live` is switched by its own org's staff, signed
+    in, like any org (decision 0024 retired the TRACKER_ADMIN_KEY path)."""
     return is_guest(guest) and target == guest
 
 
