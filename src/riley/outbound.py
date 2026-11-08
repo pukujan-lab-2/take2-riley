@@ -9,12 +9,20 @@ The scheduler (riley/scheduler.py) places 'callback' (finish the screen they ask
 'follow_up' (reminders, a missed interview, a moved date: the events named in `event_ids`). The phone number goes only
 to the SIP request, never into a room name or metadata, so it never reaches the calls table or the results page. A
 555-01xx number (made up, like the guest cast's) is never dialled.
+
+Every call names the sandbox it is for (`may_dial`). A demo sandbox (a console guest's own, or /try's `try`) rings only
+the /try visitor's own number, the one they typed and ticked consent for, never a number a guest imported in a resume
+or typed into a message: a demo visitor must never cause a call to a real person.
 """
 import json
 import os
+import re
 import secrets
 
-from .store import fictional
+from .store import _j_load, fictional, phone_key
+
+TRY = 'try'  # riley/guest.py SANDBOX: the /try visitors, apart from Hudson Park's real `live` records
+GUEST = re.compile(r'guest-[0-9a-f]{12}')  # web/tracker/rules.py is_guest: a console demo visitor's sandbox
 
 AGENT = 'nurse-screen'
 MODES = ('guest', 'outcome', 'status', 'callback', 'follow_up')
@@ -33,6 +41,31 @@ def room_metadata(meta: dict) -> str:
     return json.dumps(keep)
 
 
+def demo(sandbox: str | None) -> bool:
+    return sandbox == TRY or GUEST.fullmatch(sandbox or '') is not None
+
+
+def consented(person: dict, phone: str | None) -> bool:
+    """Whether `phone` is the /try visitor's own number, typed on /try with the consent box ticked: a `try` candidate
+    whose `guest` record holds that number. `person` is a candidate or an application row with `sandbox` and
+    `guest`. A guest's imported resume has no `guest` record, so it never counts."""
+    typed = _j_load(person.get('guest')) or {}
+    return (person.get('sandbox') == TRY and isinstance(typed, dict) and bool(phone_key(phone))
+            and phone_key(typed.get('phone')) == phone_key(phone))
+
+
+def may_dial(sandbox: str | None, phone: str | None, consent: bool = False) -> str | None:
+    """Why this call may not be placed, or None. A call that names no sandbox is never placed; a demo sandbox only
+    rings the visitor's own consented number (a made-up 555-01xx one is never dialled anyway)."""
+    if not sandbox:
+        return 'no sandbox named: never dialled'
+    if fictional(phone):
+        return 'a made-up 555-01xx number: never dialled'
+    if demo(sandbox) and not consent:
+        return "a demo rings only the visitor's own number, asked for on /try"
+    return None
+
+
 def answered(error: Exception) -> bool | None:
     """False when the dial failed because nobody picked up (a SIP status in NO_ANSWER); None for any other failure,
     which says nothing about the person."""
@@ -43,14 +76,16 @@ def answered(error: Exception) -> bool | None:
     return False if code in NO_ANSWER else None
 
 
-async def place(phone: str, metadata: dict, lk=None, wait: bool = False) -> dict:
-    """Call `phone` (E.164) with Riley. {'placed': bool, 'why': str}. `lk` is a LiveKitAPI, for tests. With `wait`
-    (the scheduler) it returns once they pick up or don't, and says which in 'answered'."""
+async def place(phone: str, metadata: dict, lk=None, wait: bool = False, *, sandbox: str | None = None,
+                consented: bool = False) -> dict:
+    """Call `phone` (E.164) with Riley for a record in `sandbox`. {'placed': bool, 'why': str}. `consented`: the
+    number is the /try visitor's own (`consented()`); only then does a demo sandbox ring. `lk` is a LiveKitAPI, for
+    tests. With `wait` (the scheduler) it returns once they pick up or don't, and says which in 'answered'."""
+    if why := may_dial(sandbox, phone, consented):  # before the trunk: the refusal is the same everywhere
+        return {'placed': False, 'why': why}
     trunk = os.environ.get('SIP_OUTBOUND_TRUNK_ID')
     if not trunk:
         return {'placed': False, 'why': 'no outbound trunk'}
-    if fictional(phone):  # the made-up people of a visitor's sandbox (riley/seed.py cast): never rung
-        return {'placed': False, 'why': 'a made-up 555-01xx number: never dialled'}
     from livekit import api
     meta = room_metadata(metadata)
     # The store keeps ten digits; the trunk dials E.164

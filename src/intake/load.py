@@ -32,9 +32,13 @@ async def touch_sandbox(sandbox: str) -> None:
 
 
 async def jobs(sandbox: str) -> list[dict]:
-    """The sandbox's jobs, drafts first, each with its criteria."""
+    """The sandbox's jobs, drafts first, each with its criteria. `people` counts the applications Review lists, with
+    the tracker's own filters (web/tracker/api.py): not merged into another person, not the bias seed's counts.
+    `applicants` stays every application on the job."""
     rows = await store.octo.query(
         'select j.*, h.name as hospital, (select count(*) from applications a where a.job_id = j.id) as applicants, '
+        '(select count(*) from applications a join candidates c on c.id = a.candidate_id where a.job_id = j.id '
+        "and c.merged_into is null and (c.facts->>'demo') is distinct from 'bias') as people, "
         "(select coalesce(json_agg(c order by c.id), '[]') from criteria c where c.job_id = j.id) as criteria "
         'from jobs j left join hospitals h on h.id = j.hospital_id where j.sandbox = $1 '
         "order by j.status = 'draft' desc, j.created desc", [sandbox])

@@ -23,7 +23,7 @@ import re
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from . import octo, outcome, store
+from . import octo, outbound, outcome, store
 from .helpline import when
 
 TZ = 'America/New_York'
@@ -416,7 +416,6 @@ async def run_once(now: datetime | None = None, dial=None) -> dict:
     if dial is None:
         if not os.environ.get('SIP_OUTBOUND_TRUNK_ID'):
             return {'calls': 0, 'why': 'no outbound trunk: everything waits for their next call'}
-        from . import outbound
         dial = outbound.place
     await store.ensure()
     items, people, modes, last_call = await load(now)
@@ -429,8 +428,10 @@ async def run_once(now: datetime | None = None, dial=None) -> dict:
         for it in call['items']:
             if it['kind'] == 'date_update':
                 await _move_date(it, now, recruiter)
-        try:
-            result = await dial(call['phone'], metadata(call), wait=True)
+        person = people.get(int(call['candidate_id'])) or {}
+        try:  # the sandbox and consent go along, so a demo's record never rings a real person (outbound.may_dial)
+            result = await dial(call['phone'], metadata(call), wait=True, sandbox=call.get('sandbox'),
+                                consented=outbound.consented(person, call['phone']))
         except Exception as e:  # one failed call never stops the others
             result = {'placed': False, 'why': f'{type(e).__name__}: {e}'}
         await _write(after_dial(call, result))

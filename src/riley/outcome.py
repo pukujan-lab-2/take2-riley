@@ -38,7 +38,8 @@ KINDS = ('next_round', 'not_yet', 'not_selected')
 # The application's status once the message is delivered (riley/helpline.py STATUS reads these)
 STATUS_AFTER = {'next_round': 'interview', 'not_yet': 'not_yet', 'not_selected': 'not_selected'}
 MODES = ('immediate', 'normal', 'dana_now')
-DEFAULT_MODE = 'immediate'   # today is the demo (docs/BUILD-PLAN.md, "Outcome mode")
+DEFAULT_MODE = 'immediate'   # the demo and Hudson Park (docs/BUILD-PLAN.md, "Outcome mode")
+ORG_MODE = 'normal'          # a real employer's org (org_<id>): Dana decides, nothing rings on approval (gap 12)
 WITH = {'recruiter': 'Dana, the recruiter', 'nurse': 'a nurse interviewer from the unit'}
 QUIET_START, QUIET_END = time(21), time(8)   # no outcome call between 9 pm and 8 am, their time
 AUTO_BY = 'dana (auto, demo)'
@@ -113,14 +114,17 @@ def say_time(dt: datetime, tz: str = 'America/New_York') -> str:
 
 def slot_list(raw, now: datetime | None = None, tz: str = 'America/New_York', limit: int = 3) -> list[dict]:
     """The job's open times as [{at, say, with}], future ones only, soonest first. A slot is an ISO time, or
-    {at, with} when it is only with the recruiter or only with a nurse interviewer."""
+    {at, with} when it is only with the recruiter or only with a nurse interviewer, and {.., interviewer_id} when it
+    was opened for one interviewer."""
     now = now or datetime.now(UTC)
     out = []
     for s in raw or []:
         at, who = (s.get('at'), s.get('with')) if isinstance(s, dict) else (s, None)
         dt = store.ts(at)
         if isinstance(dt, datetime) and dt > now:
-            out.append({'at': dt.isoformat(), 'say': say_time(dt, tz), 'with': who})
+            given = s.get('interviewer_id') if isinstance(s, dict) else None
+            out.append({'at': dt.isoformat(), 'say': say_time(dt, tz), 'with': who,
+                        **({'interviewer_id': given} if given is not None else {})})
     return sorted(out, key=lambda s: s['at'])[:limit]
 
 
@@ -473,7 +477,9 @@ async def get_mode(sandbox: str) -> str:
     mode = rows[0]['value'] if rows else None
     if isinstance(mode, str) and mode.startswith('"'):  # jsonb can come back as its JSON text
         mode = json.loads(mode)
-    return mode if mode in MODES else DEFAULT_MODE
+    if mode in MODES:
+        return mode
+    return ORG_MODE if re.fullmatch(r'org_\d+', sandbox or '') else DEFAULT_MODE
 
 
 async def set_mode(sandbox: str, mode: str, by: str) -> None:
@@ -512,6 +518,7 @@ async def decide(sandbox: str, application_id: int, result: str, reason: str, cr
     await store.ensure()
     cfg = config()
     app = await application(application_id)
+    sandbox = app.get('sandbox') or sandbox  # the message and its log go where the application is
     crit = await octo.query('select * from criteria where job_id = $1 and id in '
                             '(select jsonb_array_elements_text($2::jsonb)::bigint) order by id',
                             [app['job_id'], json.dumps(list(criteria_ids or []))]) if criteria_ids else []
@@ -538,9 +545,10 @@ async def decide(sandbox: str, application_id: int, result: str, reason: str, cr
     return rows[0]
 
 
-async def approve(message_id: int, by: str, text: str | None = None) -> dict:
+async def approve(message_id: int, by: str, text: str | None = None, ring: bool = True) -> dict:
     """Dana approves a draft, with her edit if she made one (kept in `edits`). In 'immediate' and 'dana_now' the
-    call rings now; in 'normal' it waits for their next call, or the scheduler outside quiet hours."""
+    call rings now; in 'normal' it waits for their next call, or the scheduler outside quiet hours. `ring` False (the
+    demo, for a number it may not ring: web/tracker/rules.py may_ring) approves without ringing."""
     m = await message(message_id)
     if m['status'] not in ('draft', 'approved'):
         raise ValueError(f"message {message_id} is {m['status']}")
@@ -556,7 +564,7 @@ async def approve(message_id: int, by: str, text: str | None = None) -> dict:
                     {'message_id': message_id, 'by': by, 'edited': bool(text and edits)})
     mode = await get_mode(m['sandbox'])
     later = ring_after(m)
-    if rings_now(mode, m) and not later:
+    if ring and rings_now(mode, m) and not later:
         return {**m, 'ring': await _ring(m, app, by)}
     due = later or next_allowed(datetime.now(UTC), app.get('timezone') or 'America/New_York')
     await store.log(m['sandbox'], 'outcome_queued', app['candidate_id'], m['application_id'],
@@ -569,7 +577,16 @@ async def call_now(message_id: int, by: str) -> dict:
     m = await message(message_id)
     if not can_deliver(m):
         return {'placed': False, 'why': f"message is {m['status']}, not approved and waiting"}
+    if await rung(message_id):  # approving in 'immediate' or 'dana_now' rang already: never a second call
+        return {'placed': False, 'why': 'Riley already rang for this message'}
     return await _ring(m, await application(m['application_id']), by)
+
+
+async def rung(message_id: int) -> bool:
+    """Whether a ring was placed for this message already (a `ring` event that says placed)."""
+    rows = await octo.query("select 1 from events where kind = 'ring' and detail->>'message_id' = $1 "
+                            "and (detail->>'placed')::boolean is true limit 1", [str(int(message_id))])
+    return bool(rows)
 
 
 async def _ring(m: dict, app: dict, by: str) -> dict:
@@ -584,7 +601,8 @@ async def _ring(m: dict, app: dict, by: str) -> dict:
     else:
         outbound = track('outbound')
         try:
-            result = (await outbound.place(app['phone'], meta) if outbound else
+            result = (await outbound.place(app['phone'], meta, sandbox=m['sandbox'],
+                                           consented=outbound.consented(app, app['phone'])) if outbound else
                       {'placed': False, 'why': 'no outbound calling yet: given on their next call'})
         except Exception as e:
             result = {'placed': False, 'why': f'{type(e).__name__}: {e}'}
@@ -595,9 +613,10 @@ async def _ring(m: dict, app: dict, by: str) -> dict:
 async def auto(sandbox: str, application_id: int) -> dict | None:
     """The demo flow ('immediate' mode only): decide from the screen at once with Dana's pre-written reasons,
     approve as 'dana (auto, demo)' and ring. None in any other mode, or if a decision is already made."""
+    app = await application(application_id)
+    sandbox = app.get('sandbox') or sandbox  # a /try guest's application is in the try sandbox
     if not auto_decides(await get_mode(sandbox)):
         return None
-    app = await application(application_id)
     if _load(app.get('decision')):
         return None
     cfg = config()
@@ -680,6 +699,11 @@ async def book(message_id: int, slot: str, with_whom: str) -> dict:
         return {'booked': False, 'why': 'that time was just taken'}
     await octo.query('update jobs set slots = $2 where id = $1', [app['job_id'], json.dumps(left)])
     detail = {'message_id': int(message_id), 'at': chosen['at'], 'say': chosen['say'], 'with': with_whom}
+    # The interviewer the slot was opened for, if any, so only they see it among their interviews (web/console.py mine)
+    opened = next((s for s in _load(app.get('slots')) or [] if isinstance(s, dict)
+                   and store.ts(s.get('at')) == store.ts(chosen['at'])), {})
+    if (who := chosen.get('interviewer_id') or opened.get('interviewer_id')) is not None:
+        detail['interviewer_id'] = who
     await store.log(m['sandbox'], 'booked', app['candidate_id'], m['application_id'], detail)
     from . import scheduler  # track 11: the reminder and reconfirm request before it
     await scheduler.queue_reminder(m['sandbox'], app['candidate_id'], m['application_id'], detail, app['title'])

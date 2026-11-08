@@ -196,8 +196,11 @@ async def entrypoint(ctx: JobContext):
                 await asyncio.sleep(0.5)
             # The demo's order on one number: screen, help line until the outcome rings, the outcome call, then
             # their next own call starts the interview again
-            if number and not meta and outcome.auto_decides(await outcome.get_mode('live')):
-                await store.restart_after_outcome('live', number)
+            if number and not meta:  # a /try guest's records are in guest.SANDBOX, everyone else's in live
+                for home in (guest.SANDBOX, 'live'):
+                    if outcome.auto_decides(await outcome.get_mode(home)) and \
+                            await store.restart_after_outcome(home, number):
+                        break
             demo = demo or (await guest.find(number) if number and (not meta or callback) else None)
             if demo:  # screened for the job they were given, with its facts and questions
                 cfg = job_config(cfg, demo)
@@ -339,7 +342,8 @@ async def entrypoint(ctx: JobContext):
         if not screen.callback:
             return
         try:
-            due = await scheduler.queue_callback('live', candidate_id, application_id, screen.callback)
+            due = await scheduler.queue_callback(guest.SANDBOX if demo else 'live', candidate_id, application_id,
+                                                 screen.callback)
             print('callback queued', application_id, due.isoformat(), flush=True)
         except Exception as e:
             print('callback queue failed', application_id, type(e).__name__, e, flush=True)
@@ -365,7 +369,8 @@ async def entrypoint(ctx: JobContext):
             # Bot calls are synthetic, so their transcripts are public; phone calls follow screen.yaml records:
             public = source == 'bot' or records.get('publish_phone_transcripts', False)
             try:
-                await octo.save_call(record, source, public)
+                # a /try guest's call is the demo's, never in Hudson Park's call list
+                await octo.save_call(record, source, public, sandbox=guest.SANDBOX if demo else 'live')
                 print('stored in octo', ctx.room.name, flush=True)
             except Exception as e:  # the local copy above still has it
                 print('octo store failed', ctx.room.name, e, flush=True)
@@ -410,7 +415,8 @@ async def entrypoint(ctx: JobContext):
     async def _matches(candidate_id: int):
         # What they said about themselves goes into their facts, and each job they fully qualify for is a match event
         try:  # a failed match never stops the outcome that follows
-            fits = await match.after_screen('live', candidate_id, screen.cfg['questions'], screen.answers)
+            fits = await match.after_screen(guest.SANDBOX if demo else 'live', candidate_id, screen.cfg['questions'],
+                                            screen.answers)
             print('matches', [f['job_id'] for f in fits], flush=True)
         except Exception as e:
             print('matches failed', candidate_id, type(e).__name__, e, flush=True)
@@ -425,7 +431,9 @@ async def entrypoint(ctx: JobContext):
         phone = (store._j_load(demo.get('guest')) or {}).get('phone') or store.phone_key(number)
         if phone:
             placed = await outbound.place(guest.e164(phone), {'mode': 'status', 'candidate_id': demo['candidate_id'],
-                                                              'application_id': demo['application_id']})
+                                                              'application_id': demo['application_id']},
+                                          sandbox=guest.SANDBOX,
+                                          consented=outbound.consented({**demo, 'sandbox': guest.SANDBOX}, phone))
             print('guest status call', placed, flush=True)
 
     if meta.get('mode') != 'status':  # the status call-back says one line and saves nothing

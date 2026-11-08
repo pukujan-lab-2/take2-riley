@@ -1,7 +1,8 @@
 """Guests on the demo site: "call me" from /try, with a made-up name and a random open role (track 9).
 
-A guest types a first name and a US mobile number. They get a `live` candidate under a made-up name, an
-application to a random open job, and a call from Riley when an outbound trunk exists (riley/outbound.py); without
+A guest types a first name and a US mobile number. They get a candidate in the `try` sandbox (apart from Hudson Park's
+real `live` records, which no demo visitor reads or changes) under a made-up name, an application to one of Hudson
+Park's open jobs, and a call from Riley when an outbound trunk exists (riley/outbound.py); without
 one, the page asks them to call Riley's number and the record is already waiting. What they typed (first name,
 phone, email) sits in `candidates.guest` and the phone column, and both are wiped after two days by `purge`; the
 made-up name, the application and the call records stay, so Dana can follow up in the demo.
@@ -16,7 +17,8 @@ from datetime import UTC, datetime, timedelta
 
 from . import match, octo, store
 
-SANDBOX = 'live'
+SANDBOX = 'try'         # riley/outbound.py TRY: the only demo sandbox that rings, and only the visitor's own number
+JOBS = 'live'           # the open roles a guest picks from are Hudson Park's; their application stays in SANDBOX
 KEEP_DAYS = 2           # the form promises "my number is deleted after 2 days"
 # Plain made-up full names, none a real public person; the guest plays this person on the call
 NAMES = ['Jordan Lee', 'Sam Rivera', 'Alex Morgan', 'Casey Brooks', 'Taylor Reyes', 'Morgan Ellis', 'Jamie Park',
@@ -40,15 +42,18 @@ def e164(key: str) -> str:
 
 
 def refuse(now: datetime, consent: bool, phone: str | None, ip_calls: list[datetime], today: int,
-           cfg: dict) -> str | None:
+           cfg: dict, number_today: int = 0) -> str | None:
     """Why this request may not go ahead, or None. `ip_calls` are this visitor's guest sign-ups, `today` all guest
-    sign-ups since midnight UTC. No call without the checkbox; a few per visitor per hour; a daily cap from
-    screen.yaml. A number asking again is not refused: its earlier demo is replaced (retire())."""
+    sign-ups since midnight UTC, `number_today` this number's. No call without the checkbox; one call per number per
+    day (screen.yaml guests.per_number_day), so nobody's phone is rung over and over by strangers; a few per visitor
+    per hour; a daily cap from screen.yaml. A number asking again the next day replaces its earlier demo (retire())."""
     g = cfg.get('guests', {})
     if not consent:
         return 'Please tick the box so Riley may call you.'
     if not us_mobile(phone):
         return 'That does not look like a US mobile number.'
+    if number_today >= g.get('per_number_day', 1):
+        return 'This number had its demo call today. Try again tomorrow.'
     if sum(now - t < timedelta(hours=1) for t in ip_calls) >= g.get('per_ip_hour', 3):
         return 'A few demos from here already this hour. Try again later.'
     if today >= g.get('daily_cap', 40):
@@ -193,12 +198,12 @@ def intro(who: dict, lang: str = 'en') -> str:
 async def _job(cfg: dict) -> dict:
     """A random open job from the seeded ones (riley/match.py), else the one screen.yaml describes."""
     try:
-        jobs = await match.open_jobs(SANDBOX)
+        jobs = await match.open_jobs(JOBS)
         if jobs:
             return random.choice(jobs)
     except Exception as e:  # no list: the screen.yaml job, so sign-up still works
         print('open jobs lookup failed:', type(e).__name__, e, flush=True)
-    return await store.job_for(SANDBOX, cfg)
+    return await store.job_for(JOBS, cfg)
 
 
 async def retire(key: str) -> int:
@@ -207,6 +212,16 @@ async def retire(key: str) -> int:
     rows = await octo.query("update candidates set guest = (guest - 'phone') || jsonb_build_object('replaced_phone', "
                             "guest->>'phone') where sandbox = $1 and guest->>'phone' = $2 returning id", [SANDBOX, key])
     return len(rows)
+
+
+async def number_today(key: str, now: datetime) -> int:
+    """How many demos this number asked for since midnight UTC, the replaced ones too (retire() keeps their number as
+    replaced_phone until the purge)."""
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    rows = await octo.query("select count(*) as n from candidates where sandbox = $1 and guest is not null "
+                            "and created >= $2 and (guest->>'phone' = $3 or guest->>'replaced_phone' = $3)",
+                            [SANDBOX, midnight, key])
+    return int(rows[0]['n']) if rows else 0
 
 
 async def today(now: datetime) -> int:
@@ -257,11 +272,12 @@ async def find(phone: str) -> dict | None:
 
 
 async def by_application(application_id: int) -> dict | None:
+    """The /try guest's record a call Riley placed names; only one in SANDBOX, never a live applicant."""
     rows = await octo.query(
         'select c.id as candidate_id, c.name, c.guest, a.id as application_id, a.answers, j.title, j.questions, '
         'j.facts, j.unit, j.shift, h.name as hospital from applications a join candidates c on c.id = a.candidate_id '
         'join jobs j on j.id = a.job_id left join hospitals h on h.id = j.hospital_id '
-        'where a.id = $1', [application_id])
+        'where a.id = $1 and c.sandbox = $2', [application_id, SANDBOX])
     return rows[0] if rows else None
 
 
@@ -284,4 +300,3 @@ async def purge(now: datetime | None = None) -> int:
     rows = await octo.query('update candidates set guest = null, phone = null '
                             'where guest is not null and expires <= $1 returning id', [now or datetime.now(UTC)])
     return len(rows)
-

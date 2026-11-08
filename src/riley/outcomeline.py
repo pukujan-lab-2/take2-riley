@@ -381,6 +381,7 @@ async def retake(sandbox: str, app: dict) -> dict:
     meta = {'mode': 'guest' if app.get('guest') else 'callback', 'candidate_id': int(app['candidate_id']),
             'application_id': int(app['id'])}
     phone = app.get('phone') or ''
-    placed = await outbound.place(phone, meta) if phone else {'placed': False, 'why': 'no phone on file'}
+    placed = (await outbound.place(phone, meta, sandbox=sandbox, consented=outbound.consented(app, phone)) if phone
+              else {'placed': False, 'why': 'no phone on file'})
     await store.log(sandbox, 'retake', app['candidate_id'], app['id'], {**meta, **placed})
     return placed
