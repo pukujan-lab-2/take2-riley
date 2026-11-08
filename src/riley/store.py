@@ -8,6 +8,7 @@ Every row carries `sandbox`: 'live' for real candidates, or a visitor's own id o
 ever sees another's records (SPEC rule 16). Demographics and accommodations sit in their own tables and nothing
 that scores or shows a candidate to a recruiter joins them (rules 11 and 12).
 """
+import asyncio
 import json
 import os
 import re
@@ -264,9 +265,7 @@ create table if not exists sessions (
   revoked timestamptz
 );
 -- A platform admin (decision 0024) may sign in without being in any org: kind 'platform', no org
-alter table sessions drop constraint if exists sessions_kind_check;
-alter table sessions add constraint sessions_kind_check check (kind in ('staff', 'candidate', 'platform'));
-alter table sessions alter column org_id drop not null;
+-- sessions may hold a platform admin in no org (decision 0024): migrate() changes it once, outside this script
 -- Who opens Riley's own engineering screens (health, keys, setup, evals, exports): PLATFORM_ADMINS, copied here on
 -- start so take2-riley's intake, which reads the same sessions, agrees without its own setting
 create table if not exists platform_admins (
@@ -365,15 +364,44 @@ def _j(v):
 async def migrate() -> None:
     await octo.migrate()  # calls and eval_runs first: the web app reads calls.sandbox before any call is saved
     await octo.query(SCHEMA)
+    await platform_sessions()
+
+
+async def platform_sessions() -> None:
+    """Let sessions hold a platform admin in no org, once. An ALTER takes the table's strongest lock, so it runs only
+    while still needed: running it on every start deadlocked the web app's own startup tasks."""
+    rows = await octo.query("select pg_get_constraintdef(oid) as d from pg_constraint "
+                            "where conname = 'sessions_kind_check'", [])
+    if not rows or 'platform' not in (rows[0]['d'] or ''):
+        await octo.query('alter table sessions drop constraint if exists sessions_kind_check', [])
+        await octo.query("alter table sessions add constraint sessions_kind_check "
+                         "check (kind in ('staff', 'candidate', 'platform'))", [])
+    rows = await octo.query("select is_nullable from information_schema.columns where table_name = 'sessions' "
+                            "and column_name = 'org_id'", [])
+    if rows and rows[0]['is_nullable'] == 'NO':
+        await octo.query('alter table sessions alter column org_id drop not null', [])
 
 
 async def ensure() -> None:
-    """Create or extend the tables once per process; every statement is if-not-exists, so it is safe to repeat."""
+    """Create or extend the tables once per process; every statement is if-not-exists, so it is safe to repeat. The
+    startup tasks (scheduler, purge, tracker) all call it at once, so one runs the migration and the rest wait."""
     global _migrated
-    if not _migrated:
-        await migrate()
-        await platform_admins()
-        _migrated = True
+    if _migrated:
+        return
+    async with _lock():
+        if not _migrated:
+            await migrate()
+            await platform_admins()
+            _migrated = True
+
+
+_LOCKS: dict = {}
+
+
+def _lock() -> asyncio.Lock:
+    """One lock per event loop (tests run several loops in one process)."""
+    loop = asyncio.get_running_loop()
+    return _LOCKS.setdefault(id(loop), asyncio.Lock())
 
 
 async def platform_admins() -> None:
