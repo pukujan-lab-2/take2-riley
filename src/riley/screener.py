@@ -87,6 +87,31 @@ ROLE_WORDS = {'Medical-Surgical': r'med(ical)?[- ]?surg\w*|m[eÃ©]dico[- ]quir[uÃ
 LONG = 45  # words in one reply before only a question is still said
 CAP = 60   # words no outcome reply reaches, its question included (fit)
 QUIET_TOOLS = {'record_answer', 'note_question'}
+EMAIL = re.compile(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
+SPOKEN = {'.': 'dot', '@': 'at', '-': 'dash', '_': 'underscore', '+': 'plus'}
+
+
+def spelled(email: str) -> str:
+    """An address as Riley reads it back: the part before the @ letter by letter, the domain as words
+    ("R O S A dot D, at gmail dot com")."""
+    name, _, domain = email.partition('@')
+    letters = ' '.join(SPOKEN.get(c, c.upper()) for c in name)
+    return f"{letters}, at {domain.replace('.', ' dot ')}"
+
+
+def contact_note(a: dict) -> str:
+    """For a caller with no email on file (docs/decisions/0027-apply-page.md): one ask for an email, read back, or a
+    text with a link to their page instead. Never pushed."""
+    return f"""
+
+Their email. We have no email for them, so when every question is recorded, before you ask if they have questions, \
+ask once for the best email to send their update to. When they say it, call save_contact with the address as you \
+heard it, then read it back exactly as save_contact gives it and ask if that's right. If they correct it, call \
+save_contact again with the new address and read that back. If they'd rather not give one, or have none, offer once \
+that {a['recruiter']}'s team can text them a link to their status page instead, and call save_contact with \
+text_instead true if they want that. Either answer is fine; never ask a third time."""
+
+
 
 
 def years_meet(q: dict, answer: str) -> str | None:
@@ -275,6 +300,7 @@ class Screen:
     suggested: list = field(default_factory=list)  # job ids find_roles offered, so a test can check none was invented
     language: str = 'en'  # a guest call asks first (track 9); 'es' once they pick Spanish
     listed_all: bool = False  # the caller asked for every open role (list_roles), so Riley may name them all
+    contact: dict = field(default_factory=dict)  # an email given on the call ({email}) or {texts: True} (save_contact)
 
     def scorecard(self) -> dict:
         qs = self.cfg['questions']
@@ -533,11 +559,13 @@ class Screener(Agent):
     def __init__(self, cfg: dict, greeting_audio: list | None = None, prefilled: dict | None = None,
                  carried: dict | None = None, who: dict | None = None, jobs: list[dict] | None = None,
                  demo: dict | None = None, outbound: bool = False, on_language=None, placed: str | None = None,
-                 **kw):
+                 ask_email: bool = False, **kw):
         # Several open jobs and a caller not on file: Riley asks which role first (choose_role, find_roles)
         self.jobs = [] if who or demo else jobs or []
         self.base = cfg
-        full = instructions(cfg, prefilled, carried, self.jobs)
+        # A phone caller with no email on file is asked for one at the end (contact_note); never a /try guest
+        self.extra = contact_note(cfg['agent']) if ask_email and not demo else ''
+        full = instructions(cfg, prefilled, carried, self.jobs) + ('' if self.jobs else self.extra)
         self.lang = 'en'
         # Every screen can switch to Spanish; a guest's call asks first (riley/guest_call.py)
         kw['tools'] = [*kw.get('tools', []), guest_call.language_tool(self, full if demo else None, demo, on_language)]
@@ -793,7 +821,7 @@ class Screener(Agent):
         screen.cfg, screen.job, screen.answers = cfg, job, settled(carried)
         self.cfg, self.ids = cfg, [q['id'] for q in cfg['questions']]
         self.rubric = {q['id']: q for q in cfg['questions']}
-        await self.update_instructions(instructions(cfg, screen.prefilled, carried))
+        await self.update_instructions(instructions(cfg, screen.prefilled, carried) + self.extra)
         print(f"  role          {job['id']} {job['title']} at {job.get('hospital')}", flush=True)
         first = next(q['ask'] for q in cfg['questions'] if q['id'] not in screen.answers)
         return (f"role set: {job['title']} at {job.get('hospital')}. In this reply, say so in a few words and ask the "
@@ -860,3 +888,21 @@ class Screener(Agent):
         context.userdata.callback = when
         return (f'callback recorded for {when}. In your next sentence say the callback time back to them '
                 f'("we will call you {when}"), then say goodbye and call end_call')
+
+    @function_tool()
+    async def save_contact(self, context: RunContext[Screen], email: str = '', text_instead: bool = False) -> str:
+        """Save the email the caller gave for their update, or that they would rather get a text with a link to their
+        status page. Only for a caller you were told has no email on file.
+
+        Args:
+            email: the address as you heard it, e.g. rosa.diaz@gmail.com (empty when text_instead)
+            text_instead: true when they would rather get a text with a link than give an email
+        """
+        if text_instead:
+            context.userdata.contact = {'texts': True}
+            return 'noted: a text with a link to their page instead. Say so in a few words, then go on.'
+        clean = re.sub(r'\s+', '', email or '').strip('.').lower()
+        if not EMAIL.fullmatch(clean):
+            raise ToolError('not a whole email address: ask them to say it again, slowly')
+        context.userdata.contact = {'email': clean}
+        return f'saved. Read it back now, exactly: "{spelled(clean)}". Then ask if that is right.'

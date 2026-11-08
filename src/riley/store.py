@@ -652,8 +652,8 @@ async def for_call(sandbox: str, phone: str, application_id=None) -> tuple[dict 
     newest one not yet screened), with what the resume says and what they already confirmed for another role.
     (None, {}, {}) for an unknown number."""
     apps = await octo.query(
-        'select a.id, a.candidate_id, a.job_id, a.status, a.answers, a.applied, c.name, j.title, j.questions, '
-        'j.facts as job_facts, j.unit, j.shift, j.hours, h.name as hospital from applications a '
+        'select a.id, a.candidate_id, a.job_id, a.status, a.answers, a.applied, c.name, c.email, j.title, '
+        'j.questions, j.facts as job_facts, j.unit, j.shift, j.hours, h.name as hospital from applications a '
         'join candidates c on c.id = a.candidate_id join jobs j on j.id = a.job_id '
         'left join hospitals h on h.id = j.hospital_id '
         'where c.sandbox = $1 and c.phone = $2 and c.merged_into is null and a.withdrawn is null '
@@ -663,6 +663,21 @@ async def for_call(sandbox: str, phone: str, application_id=None) -> tuple[dict 
     if not current:
         return None, {}, {}
     return (current, *call_answers(apps, current['id']))
+
+
+async def save_contact(sandbox: str, candidate_id: int, contact: dict) -> None:
+    """What a caller with no email on file gave at the end of their screen (riley/screener.py save_contact): an email,
+    kept only while none is on file, or that they would rather get a text with a link to their page."""
+    email = email_key(contact.get('email'))
+    if email:
+        await octo.query('update candidates set email = coalesce(email, $2) where id = $1', [candidate_id, email])
+    if contact.get('texts'):
+        await octo.query('update candidates set consent = consent || $2 where id = $1',
+                         [candidate_id, _j({'texts': {'how': 'asked on the call for a text with a link',
+                                                      'at': datetime.now(UTC).isoformat()}})])
+    if email or contact.get('texts'):
+        await log(sandbox, 'contact_given', candidate_id, None,
+                  {'email': bool(email), 'texts': bool(contact.get('texts'))})
 
 
 async def save_answers(application_id: int, screen_answers: dict, score: dict, prefilled: dict | None = None) -> None:
