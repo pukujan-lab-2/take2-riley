@@ -11,6 +11,7 @@ This is a LiveKit Agents project. LiveKit Agents is a Python SDK for building vo
 - `src/models.py` holds model presets. All models run through LiveKit Inference; do not add provider API keys or plugins unless the team asks.
 - The agent must work on a live phone call. Keep replies short, confirm details out loud, and keep the `EndCallTool`.
 - Teams are on LiveKit's free plan with limited inference credits. Prefer the text debugger over simulations while iterating, and run one scenario at a time.
+- Riley's speech chains live in `screen.yaml` `stack.listens` and `stack.speaks` (synced from nurse-screen), and the server routing in voice-agent-research `demo/live-site/speech/gateway/routes.toml` (its `docs/speech-gateway.md`, section "How to change routing or fallbacks"); change them only when the owner asks, and never switch cloud speech (Deepgram, Cartesia, `dana.voice`) on by yourself.
 
 ## Tooling
 

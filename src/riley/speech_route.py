@@ -5,8 +5,10 @@ One gateway on the VPS fronts every project's speech servers and its routes.toml
 the Pro (Parakeet and Pocket TTS), every other language to the Windows PC (Whisper large-v3-turbo and Kokoro on its
 RTX 4060), which also takes English when the Pro is full. Riley sends its room on every speech request (X-Speech-
 Call), so a call stays on one server, and asks for a place when the call starts and again when the caller picks a
-language (riley/main.py _language). With no room anywhere (503) the Pro parts stand down and the next voice in the
-chain, the cloud, takes the call. The call keeps its place every KEEP_S and gives it back when it ends.
+language (riley/main.py _language). When every server is full the gateway waits for a place (routes.toml when_full =
+"wait"); if it still answers 503, or isn't there, the Pro parts stand down and the next entry in screen.yaml's chain
+takes the call. Since 8 Nov the chain has no cloud entry (the owner's call), so that call has no speech. The call
+keeps its place every KEEP_S and gives it back when it ends.
 """
 import asyncio
 import contextlib
@@ -61,16 +63,16 @@ class Route:
                                            headers=self.gw.headers(self.room)) as r:
                 return (await r.json()).get('host') if r.status == 200 else None
         except (aiohttp.ClientError, TimeoutError, ValueError):
-            return None  # no gateway: the cloud takes the call
+            return None  # no gateway: the next entry in the chain, if any, takes the call
 
     async def to(self, lang: str) -> str | None:
         """Take a place for the call in this language and point the parts at the gateway, or stand them down."""
         self.host = await self._place(lang)
         for p in self.parts:
-            p.url = self.gw.url if self.host else ''  # no room: the parts fail at once and the cloud takes over
+            p.url = self.gw.url if self.host else ''  # no room: the parts fail at once, the next entry takes over
             p.headers = self.gw.headers(self.room)
             p.switch(lang)
-        print('  speech       ', self.host or 'cloud', lang, flush=True)
+        print('  speech       ', self.host or 'no place', lang, flush=True)
         if self.host:
             # The load runs behind the kept greeting (or Riley's thinking, after a language pick); a cold stack takes
             # 4.5 to 17 s. Awaiting self.loading waits for it
@@ -115,7 +117,7 @@ async def warm(gw: Gateway) -> None:
     gateway answers at once and loads behind it, never swapping out a stack another call is using."""
     with contextlib.suppress(aiohttp.ClientError, TimeoutError):
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as http, \
-                http.post(f'{gw.url}/warm', headers=gw.headers()):
+                http.post(f'{gw.url}/warm', params={'project': gw.project}, headers=gw.headers()):
             pass
 
 

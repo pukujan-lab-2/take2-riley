@@ -107,17 +107,21 @@ stack:
     - { provider: google, model: gemini-2.5-flash }
     - { provider: inferhub, model: deepseek-v4.1-flash }
   brain_timeout_s: 4
-  # Our own speech first (owner, 7 Nov: self-hosted saves the money and measured the same wait at the caller's ear,
-  # 2.2 s with streaming listening against 2.1 s on the cloud). The cloud takes over when no server of ours has room
-  # or one fails. Before: Deepgram and Cartesia first (5-6 Nov), the Pro the backup.
+  # Our own speech only (owner, 8 Nov: no cloud speech by default). Self-hosted measured the same wait at the caller's
+  # ear (owner, 7 Nov: 2.2 s with streaming listening against 2.1 s on the cloud). When every server is full the
+  # gateway waits for a place (routes.toml when_full = "wait"). Before: the cloud took over (7-8 Nov), and before that
+  # Deepgram and Cartesia were first (5-6 Nov). Each entry is one link of a chain: the next takes over when one fails.
+  # Change these only when the owner asks; the keys stay set, so uncommenting a line brings the cloud back.
   listens:
     - { provider: pro-speech, stack: english-fast }
-    - { provider: deepgram, model: nova-3 }
+    # Costs money per minute (Deepgram):
+    # - { provider: deepgram, model: nova-3 }
   speaks:
     - { provider: pro-speech, stack: english-fast }
-    - { provider: cartesia, model: sonic-3, speed: 1.05 }
+    # Costs money per character (Cartesia):
+    # - { provider: cartesia, model: sonic-3, speed: 1.05 }
   # Every project's speech goes through one gateway on the VPS, whose routes.toml picks the server (voice-agent-research
-  # docs/speech-gateway.md): English on the Pro, other languages on the Windows PC, the cloud chain above when both are full
+  # docs/speech-gateway.md): English on the Pro, other languages on the Windows PC
   speech_gateway: { url_env: SPEECH_GATEWAY_URL, url: 'http://host.docker.internal:18800', project: riley }
 
 # What this business keeps. Every call is stored in full in Octo; these choose what else happens to it.
@@ -132,9 +136,11 @@ dana:
   # In the demo mode the outcome call waits this long after the screen, so the caller can first ring Riley's number
   # and ask where their application stands (the help line); then the scheduler rings with the outcome
   ring_after_minutes: 3
-  # A second voice, distinct from Riley's. The lines are recorded once on the worker and kept on disk; with no
-  # Cartesia key the call goes on without the clip.
-  voice: { provider: cartesia, model: sonic-3, id: 156fb8d2-335b-4950-9cb3-a2d33befec77 }
+  # A second voice, distinct from Riley's. Each line was recorded once on the worker and is kept on disk
+  # (RILEY_VOICE_DIR, dana-<hash>.wav), and the kept clip plays on every call. With no voice here nothing is recorded:
+  # a changed line goes without a clip (owner, 8 Nov: no cloud speech by default).
+  # Costs money per character (Cartesia), only when a line has no kept clip:
+  # voice: { provider: cartesia, model: sonic-3, id: 156fb8d2-335b-4950-9cb3-a2d33befec77 }
   lines:
     next_round: Hi, it's Dana from Hudson Park. I read your screen myself, and I'd like to meet you. Riley has the details.
     not_yet: Hi, it's Dana from Hudson Park. I read your screen myself. It's not a yes yet, and Riley has what would change that.

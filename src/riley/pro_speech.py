@@ -36,7 +36,8 @@ KEPT = Path(os.environ.get('RILEY_VOICE_DIR', '/tmp/riley-voice'))
 # Kokoro, voice ef_dora for Spanish; the Pro's agent/languages/es) hears and speaks Spanish; lfm3-audio does too.
 # Checked on the Pro, 6 Nov.
 SPEAKS_SPANISH = {'multilingual', 'lfm3-audio'}
-# A call the speech gateway had no room for (riley/speech_route.py): the Pro parts stand aside for the cloud
+# A call the speech gateway had no room for (riley/speech_route.py): the Pro parts stand aside for the next entry in
+# the chain, if screen.yaml lists one
 NO_ROOM = 'pro speech: no speech server has room for this call'
 
 

@@ -26,7 +26,7 @@ services:
     networks:
       default: {}
       octo: {}
-    # The Pro's speech server (Riley's backup ears and voice) through the SSH tunnel's relay on the docker0 gateway
+    # Riley's ears and voice go through the speech gateway on the host (screen.yaml stack.speech_gateway, port 18800)
     extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
       - /home/ubuntu/apps/nurse-screen-calls:/app/calls
@@ -67,11 +67,8 @@ services:
       options: { max-size: 10m, max-file: "3" }
 
 networks:
-  # The Pro speech relay (socat on 172.17.0.1:18799) only accepts 172.16.0.0/12; nurse-screen has 172.16.42.0/24
   default:
     name: take2-riley_internal
-    ipam:
-      config: [{ subnet: 172.16.43.0/24 }]
   # Octo runs on this host: reach octo-api directly, not through Cloudflare
   octo:
     name: octo_internal
