@@ -38,6 +38,7 @@ from . import (
     outcome,
     outcomeline,
     scheduler,
+    speech_route,
     store,
 )
 from .pro_speech import ProSpeechSTT, ProSpeechTTS
@@ -66,11 +67,12 @@ def prewarm(proc: JobProcess):
     proc.userdata['vad'] = silero.VAD.load(min_silence_duration=0.3)
 
 
-def ear(listens: dict):
-    """One entry of screen.yaml stack.listens: the first hears, the next takes over when it fails."""
+def ear(listens: dict, vad):
+    """One entry of screen.yaml stack.listens: the first hears, the next takes over when it fails. The Pro listens
+    while the caller talks, its turns cut by Riley's VAD."""
     if listens['provider'] == 'pro-speech':
         return ProSpeechSTT(os.environ.get('PRO_SPEECH_URL', 'http://host.docker.internal:18799'),
-                            stack=listens.get('stack', 'english-fast'))
+                            stack=listens.get('stack', 'english-fast'), vad=vad)
     # DEEPGRAM_BASE_URL routes through the Octo vault proxy with a working key
     proxy: dict[str, Any] = {'base_url': os.environ['DEEPGRAM_BASE_URL']} if os.environ.get('DEEPGRAM_BASE_URL') else {}
     return deepgram.STT(model=listens['model'], keyterm=KEYTERMS, smart_format=True, **proxy)
@@ -135,20 +137,38 @@ async def entrypoint(ctx: JobContext):
     # phone
     source = 'bot' if ctx.room.name.startswith('bot-') else 'web' if ctx.room.name.startswith('web-') else 'phone'
     llm_, chain = brain.build(stack)
-    ears: list[stt.STT] = [ear(e) for e in stack['listens']]
+    loading: set[asyncio.Future] = set()  # kept so a background load is not garbage-collected mid-swap
+    ears: list[stt.STT] = [ear(e, ctx.proc.userdata['vad']) for e in stack['listens']]
     stt_ = (ears[0] if len(ears) == 1 and ears[0].capabilities.streaming
             else stt.FallbackAdapter(ears, vad=ctx.proc.userdata['vad']))
     chain_v = voices(stack['speaks'])
     tts_ = chain_v[0] if len(chain_v) == 1 else tts.FallbackAdapter(chain_v)
     pro = next((v for v in chain_v if isinstance(v, ProSpeechTTS)), None)
-    greeting_audio = pro.kept(greeting(cfg)) if pro else None
+    # Our own speech servers first, through the shared speech gateway: the call takes a place on the one for its
+    # language that has room (riley/speech_route.py)
+    speech_gw = speech_route.gateway(stack.get('speech_gateway'))
+    route = speech_route.Route(ctx.room.name, speech_gw, speech_route.pro_parts([*ears, *chain_v])) \
+        if speech_gw and pro else None
+    if route:
+        # A browser call can name its language; a phone call asks (set_language)
+        await route.to(meta.get('lang') or 'en')
+        ctx.add_shutdown_callback(route.close)
+        # Riley's other stacks load too, so a caller who picks another language doesn't wait for one
+        loading.add(task := asyncio.ensure_future(speech_route.warm(route.gw)))
+        task.add_done_callback(loading.discard)
+    greeting_audio = pro.kept(greeting(cfg)) if pro and pro.url else None
 
     async def _warm(pro: ProSpeechTTS):
         # A cold stack takes up to 17 s to load. It loads while the kept greeting plays (or, on a worker's first call,
         # before the greeting is synthesized), then the greeting is kept for the next call
         try:
-            await pro.load()
-            await pro.keep(greeting(cfg))
+            if route:
+                if route.loading:
+                    await route.loading
+            else:
+                await pro.load()
+            if pro.url:
+                await pro.keep(greeting(cfg))
         except Exception as e:  # the first line then loads it, or the next voice takes over
             print('pro speech load failed:', type(e).__name__, e, flush=True)
     warming = asyncio.ensure_future(_warm(pro)) if pro else None
@@ -419,7 +439,6 @@ async def entrypoint(ctx: JobContext):
         extra_description='Call it once the goodbye is said, or when the caller wants to stop, has no time, '
                           'or is abusive.',
         end_instructions=END_WORDS, on_tool_called=_ended)
-    loading: set[asyncio.Future] = set()  # kept so a background load is not garbage-collected mid-swap
 
     def _language(lang: str):
         # Deepgram and Cartesia switch language mid-call; the Pro switches to its multilingual stack (Kokoro's
@@ -431,9 +450,12 @@ async def entrypoint(ctx: JobContext):
                 part.update_options(language='multi' if lang == 'es' else 'en')
             elif isinstance(part, cartesia.TTS):
                 part.update_options(language=lang)
-            elif isinstance(part, (ProSpeechSTT, ProSpeechTTS)):
+            elif isinstance(part, (ProSpeechSTT, ProSpeechTTS)) and not route:
                 part.switch(lang)
-        if pro:
+        if route:  # another language can mean another server (English on the Pro, the rest on the Windows PC)
+            loading.add(task := asyncio.ensure_future(route.to(lang)))
+            task.add_done_callback(loading.discard)
+        elif pro:
             loading.add(task := asyncio.ensure_future(_load(pro)))
             task.add_done_callback(loading.discard)
 
