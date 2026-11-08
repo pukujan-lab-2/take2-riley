@@ -72,7 +72,8 @@ def instructions(cfg: dict, message: dict, language: str | None, hidden: bool = 
     if hidden:
         facts = 'None yet: they have not confirmed who they are.' + identity.PENDING
     else:
-        slots = '\n'.join(f"- {s['say']}" + (f" (only with {outcome.WITH[s['with']]})" if s.get('with') else '')
+        with_ = {**outcome.WITH, 'recruiter': f"{a['recruiter']}, the recruiter"}
+        slots = '\n'.join(f"- {s['say']}" + (f" (only with {with_[s['with']]})" if s.get('with') else '')
                           for s in p.get('slots', [])) or '- none listed'
         offers = '\n'.join(f"- [{o['job_id']}] {outcome.offer_text(o)}" for o in p.get('offers', [])) or '- none'
         facts = f"""The message {a['recruiter']} approved, word for word (say it in your own short turns, adding \
@@ -174,8 +175,8 @@ class OutcomeLine(Agent):
     async def _dana(self) -> None:
         """Right after a yes: Dana's recorded line in her voice, before Riley says anything about the outcome. In
         Spanish, or with no clip kept, Riley goes straight on."""
-        if self.state.language == 'es' or not self.session.tts:
-            return
+        if self.state.language == 'es' or not self.session.tts or self.cfg.get('dana', {}).get('clips') is False:
+            return  # Dana's clips are Hudson Park's own: a real org's outcome call goes without (riley/tenant.py)
         frames = outcome.clip_frames(self.state.message['kind'], self.cfg)
         if not frames:
             return
