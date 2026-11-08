@@ -361,14 +361,23 @@ def email(message: dict, application: dict) -> dict:
     reply = ('Reply to this email or call our recruitment line, and you will reach me or Riley, our AI assistant.')
     fair = fair_link(message, application)
     note = f'Optional: help us check our process is fair: {fair}' if fair else ''
-    text = f'{body}\n\n{reply}\n\n' + (f'{note}\n\n' if note else '') + f'{sign}\n'
+    # A plain link to sign in by email, not a one-time token: this email may be read days later (decision 0022)
+    portal = f"See where your applications stand any time: {portal_link()}"
+    text = f'{body}\n\n{reply}\n\n{portal}\n\n' + (f'{note}\n\n' if note else '') + f'{sign}\n'
     paras = ''.join(f'<p>{html.escape(p)}</p>' for p in (body, reply))
+    paras += (f'<p>See where your applications stand any time: <a href="{html.escape(portal_link())}">'
+              'sign in with this email address</a></p>')
     if fair:  # one quiet line, the same as on the /try page
         paras += (f'<p style="font-size:13px;color:#666">Optional: <a href="{html.escape(fair)}" style="color:#666">'
                   'help us check our process is fair</a></p>')
     page = (f'<div style="font-family:Georgia,serif;font-size:16px;line-height:1.5;color:#222;max-width:560px">'
             f'{paras}<p>{html.escape(recruiter)}<br>Recruiter, {html.escape(employer)}</p></div>')
     return {'subject': subject({**message, 'parts': parts}, application), 'text': text, 'html': page}
+
+
+def portal_link() -> str:
+    """The candidate sign-in page (web/auth.py): they get a link to the address on their application."""
+    return os.environ.get('PUBLIC_URL', '').rstrip('/') + '/console/login?as=candidate'
 
 
 def fair_link(message: dict, application: dict) -> str | None:

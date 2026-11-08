@@ -22,7 +22,7 @@ def config() -> dict:
 
 def visitor_sandbox(cookie: str | None) -> str:
     """A web visitor's own sandbox: the tracker's guest id their cookie holds, or a new one, so what they import
-    shows on /tracker too. Never 'live' (rule 16)."""
+    shows in the console too. Never 'live' (rule 16)."""
     return cookie if cookie and rules.is_guest(cookie) else rules.new_sandbox()
 
 

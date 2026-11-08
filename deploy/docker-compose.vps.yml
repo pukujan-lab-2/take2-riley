@@ -38,8 +38,10 @@ services:
       driver: json-file
       options: { max-size: 20m, max-file: "5" }
 
-  # The candidate intake page (src/riley_web): resume upload and parsing into a visitor's sandbox. No host port:
-  # nurse-screen-web passes riley.design-bakery.com/intake and /api/intake/* to it over octo_internal (INTAKE_URL).
+  # The intake API (src/riley_web): job-post and resume imports into the asker's sandbox, a signed-in org's or the demo
+  # guest's (riley_web/session.py, nurse-screen's web/session.py synced). No host port: nurse-screen-web passes
+  # /api/intake/* to it over octo_internal (INTAKE_URL), cookies included. The env file is nurse-screen's, so the
+  # session cookie's signing key (SESSION_SECRET, else derived from NURSE_OCTO_KEY) is the same on both.
   web:
     image: take2-riley:${TAG:-dev}
     container_name: take2-riley-web

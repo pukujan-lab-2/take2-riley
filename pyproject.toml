@@ -36,6 +36,8 @@ dev = [
     "pytest-asyncio",
     "ruff",
     "hypothesis",
+    # tests/test_intake_tenancy.py runs the real SQL on a throwaway Postgres (tests/pgtest.py)
+    "psycopg[binary]",
 ]
 
 [tool.uv]
